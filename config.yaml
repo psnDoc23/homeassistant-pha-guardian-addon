@@ -1,7 +1,7 @@
 name: PHA_Guardian
 version: "0.0.9"
 slug: "pha_guardian"
-description: "woohoo it's on!!!"
+description: "this is a very serious application :) "
  
 arch:
   - aarch64
