@@ -1,0 +1,15 @@
+name: PHA_Guardian
+version: "0.0.9"
+slug: "pha_guardian"
+description: "woohoo it's on!!!"
+ 
+arch:
+  - aarch64
+startup: services
+boot: auto
+host_network: true 
+
+build_from:
+  aarch64: ghcr.io/home-assistant/aarch64-base:3.19
+
+
