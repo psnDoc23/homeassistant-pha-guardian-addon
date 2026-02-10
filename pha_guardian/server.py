@@ -61,10 +61,10 @@ class Handler(BaseHTTPRequestHandler):
                 logging.error(f"Supervisor API error: {e}")
                 self.send_response(500)
                 self.end_headers()
-                else:
-                    logging.info(f"Unknown path requested: {self.path}")
-                    self.send_response(404)
-                    self.end_headers()
+        else:
+            logging.info(f"Unknown path requested: {self.path}")
+            self.send_response(404)
+            self.end_headers()
 
 def run():
     logging.info("Starting Guardian server on port 8099")
