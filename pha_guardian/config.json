@@ -1,6 +1,6 @@
 {
   "name": "PHA Guardian",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "slug": "pha_guardian",
   "description": "pha at a dozen",
   "arch": ["aarch64"],
@@ -9,7 +9,7 @@
   "host_network": true,
   "init": false,
   "legacy": false,
-  "ports": {},
+  "ports": {8099},
   "ports_description": {},
   "map": ["config:rw", "share:rw"],
   "options": {},
