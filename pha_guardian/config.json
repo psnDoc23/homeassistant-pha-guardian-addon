@@ -1,8 +1,8 @@
 {
   "name": "PHA Guardian",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "slug": "pha_guardian",
-  "description": "pha at a dozen",
+  "description": "quinciera",
   "arch": ["aarch64"],
   "startup": "services",
   "boot": "auto",
