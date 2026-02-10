@@ -2,7 +2,7 @@
   "name": "PHA Guardian",
   "version": "0.0.15",
   "slug": "pha_guardian",
-  "description": "quinciera",
+  "description": "",
   "arch": ["aarch64"],
   "startup": "services",
   "boot": "auto",
