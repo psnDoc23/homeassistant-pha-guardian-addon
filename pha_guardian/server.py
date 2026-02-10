@@ -2,6 +2,8 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import logging
 import json
+import os
+import urllib.request
 
 logging.basicConfig(level=logging.INFO, format='[Guardian] %(message)s')
 
@@ -31,11 +33,38 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json")
             self.end_headers()
             self.wfile.write(payload)
-
-        else:
-            logging.info(f"Unknown path requested: {self.path}")
-            self.send_response(404)
-            self.end_headers()
+            
+        elif self.path == "/supervisor-test":
+            logging.info("Supervisor test requested")
+        
+        
+            token = os.environ.get("SUPERVISOR_TOKEN")
+            if not token:
+                logging.error("Supervisor token not found")
+                self.send_response(500)
+                self.end_headers()
+                return
+        
+            req = urllib.request.Request(
+                "http://supervisor/info",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+        
+            try:
+                with urllib.request.urlopen(req) as response:
+                    data = response.read()
+                    self.send_response(200)
+                    self.send_header("Content-type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(data)
+            except Exception as e:
+                logging.error(f"Supervisor API error: {e}")
+                self.send_response(500)
+                self.end_headers()
+                else:
+                    logging.info(f"Unknown path requested: {self.path}")
+                    self.send_response(404)
+                    self.end_headers()
 
 def run():
     logging.info("Starting Guardian server on port 8099")
