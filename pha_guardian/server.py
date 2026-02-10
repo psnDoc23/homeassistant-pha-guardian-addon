@@ -19,7 +19,6 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/issues":
             logging.info("Issues requested")
 
-            # Temporary static data — replace later with real Guardian logic
             issues = {
                 "issues": [
                     {"id": 1, "title": "Example issue", "severity": "low"},
@@ -33,23 +32,22 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json")
             self.end_headers()
             self.wfile.write(payload)
-            
+
         elif self.path == "/supervisor-test":
             logging.info("Supervisor test requested")
-        
-        
+
             token = os.environ.get("SUPERVISOR_TOKEN")
             if not token:
                 logging.error("Supervisor token not found")
                 self.send_response(500)
                 self.end_headers()
                 return
-        
+
             req = urllib.request.Request(
                 "http://supervisor/info",
                 headers={"Authorization": f"Bearer {token}"}
             )
-        
+
             try:
                 with urllib.request.urlopen(req) as response:
                     data = response.read()
@@ -61,6 +59,7 @@ class Handler(BaseHTTPRequestHandler):
                 logging.error(f"Supervisor API error: {e}")
                 self.send_response(500)
                 self.end_headers()
+
         else:
             logging.info(f"Unknown path requested: {self.path}")
             self.send_response(404)
@@ -73,4 +72,3 @@ def run():
 
 if __name__ == "__main__":
     run()
-
