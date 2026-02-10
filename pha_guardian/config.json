@@ -9,6 +9,7 @@
   "host_network": true,
   "init": false,
   "legacy": false,
+  "privileged": ["supervisor"],
   "ports": {
     "8099/tcp": 8099
   },
