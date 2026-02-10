@@ -1,6 +1,6 @@
 {
   "name": "PHA Guardian",
-  "version": "0.0.16",
+  "version": "0.0.17",
   "slug": "pha_guardian",
   "description": "",
   "arch": ["aarch64"],
