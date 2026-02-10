@@ -9,8 +9,12 @@
   "host_network": true,
   "init": false,
   "legacy": false,
-  "ports": {8099},
-  "ports_description": {},
+  "ports": {
+    "8099/tcp": 8099
+  },
+  "ports_description": {
+    "8099/tcp": "Guardian API"
+  },
   "map": ["config:rw", "share:rw"],
   "options": {},
   "schema": {}
