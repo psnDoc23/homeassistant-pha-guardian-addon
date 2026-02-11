@@ -1,7 +1,7 @@
 {
   "name": "PHA Guardian Add-on Repository",
   "url": "https://github.com/psnDoc23/homeassistant-pha-guardian-addon",
-  "maintainer": "Dave Ryerson",
+  "maintainer": "Dave G Ryerson",
   "addons": [
     {
       "slug": "pha_guardian",
@@ -9,4 +9,5 @@
     }
   ]
 }
+
 
