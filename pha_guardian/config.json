@@ -2,14 +2,13 @@
   "name": "PHA Guardian",
   "version": "0.0.19",
   "slug": "pha_guardian",
-  "description": "",
-  "arch": ["aarch64"],
+  "description": "Guardian API monitoring tool",
+  "arch": ["aarch64", "amd64", "armv7"],
   "startup": "services",
   "boot": "auto",
   "host_network": true,
   "init": false,
-  "legacy": false,
-  "privileged": ["supervisor"],
+  "privileged": [],
   "ports": {
     "8099/tcp": 8099
   },
