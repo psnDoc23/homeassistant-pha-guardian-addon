@@ -1,6 +1,6 @@
 {
   "name": "PHA Guardian",
-  "version": "0.0.19",
+  "version": "0.0.20",
   "slug": "pha_guardian",
   "description": "Guardian API monitoring tool",
   "arch": ["aarch64", "amd64", "armv7"],
