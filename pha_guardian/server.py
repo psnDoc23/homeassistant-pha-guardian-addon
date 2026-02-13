@@ -1,74 +1,52 @@
 # server.py
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import asyncio
 import logging
-import json
-import os
-import urllib.request
+from fastapi import FastAPI
+import uvicorn
+
+from guardian.checks.availability import check_api_availability
 
 logging.basicConfig(level=logging.INFO, format='[Guardian] %(message)s')
 
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == "/health":
-            logging.info("Health check received")
-            self.send_response(200)
-            self.send_header("Content-type", "application/json")
-            self.end_headers()
-            self.wfile.write(b'{"status": "ok"}')
+# TODO: Replace this with your actual Guardian API endpoint
+GUARDIAN_API_URL = "http://your_guardian_ip_or_cloud_endpoint"
 
-        elif self.path == "/issues":
-            logging.info("Issues requested")
+app = FastAPI()
 
-            issues = {
-                "issues": [
-                    {"id": 1, "title": "Example issue", "severity": "low"},
-                    {"id": 2, "title": "Another issue", "severity": "medium"}
-                ]
-            }
 
-            payload = json.dumps(issues).encode("utf-8")
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
-            self.send_response(200)
-            self.send_header("Content-type", "application/json")
-            self.end_headers()
-            self.wfile.write(payload)
 
-        elif self.path == "/supervisor-test":
-            logging.info("Supervisor test requested")
+@app.get("/status")
+def status():
+    return {"status": "running", "check": "api_availability"}
 
-            token = os.environ.get("SUPERVISOR_TOKEN")
-            if not token:
-                logging.error("Supervisor token not found")
-                self.send_response(500)
-                self.end_headers()
-                return
 
-            req = urllib.request.Request(
-                "http://supervisor/info",
-                headers={"Authorization": f"Bearer {token}"}
-            )
+async def periodic_checks():
+    """Run API availability checks every 60 seconds."""
+    logging.info("Starting periodic Guardian checks")
 
-            try:
-                with urllib.request.urlopen(req) as response:
-                    data = response.read()
-                    self.send_response(200)
-                    self.send_header("Content-type", "application/json")
-                    self.end_headers()
-                    self.wfile.write(data)
-            except Exception as e:
-                logging.error(f"Supervisor API error: {e}")
-                self.send_response(500)
-                self.end_headers()
+    while True:
+        logging.info("Running API availability check...")
+        result = check_api_availability(GUARDIAN_API_URL)
+        logging.info(f"API check result: {result}")
 
-        else:
-            logging.info(f"Unknown path requested: {self.path}")
-            self.send_response(404)
-            self.end_headers()
+        await asyncio.sleep(60)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Start background tasks when the server starts."""
+    asyncio.create_task(periodic_checks())
+    logging.info("Guardian server startup complete")
+
 
 def run():
-    logging.info("Starting Guardian server on port 8099")
-    server = HTTPServer(("", 8099), Handler)
-    server.serve_forever()
+    logging.info("Starting Guardian FastAPI server on port 8099")
+    uvicorn.run(app, host="0.0.0.0", port=8099)
+
 
 if __name__ == "__main__":
     run()
