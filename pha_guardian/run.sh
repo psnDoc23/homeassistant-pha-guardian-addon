@@ -1,3 +1,8 @@
 #!/usr/bin/env bash
-echo "[Guardian] Starting add-on..."
+set -e
+
+echo "[Guardian] Starting PHA Guardian add-on..."
+
+export SUPERVISOR_TOKEN="${SUPERVISOR_TOKEN}"
+
 python3 /app/server.py
