@@ -23,8 +23,7 @@ class Handler(BaseHTTPRequestHandler):
             issues = {
                 "issues": [
                     {"id": 1, "title": "Example issue", "severity": "low"},
-                    {"id": 2, "title": "Another issue", "severity": "medium"},
-                    ({"id": 3, "title": "Yikes!!! that doesn't look good!", "severity": "high"})
+                    {"id": 2, "title": "Another issue", "severity": "medium"}
                 ]
             }
 
