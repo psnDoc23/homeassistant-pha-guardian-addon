@@ -1,75 +1,100 @@
 # server.py
-from http.server import BaseHTTPRequestHandler, HTTPServer
-import json
 import os
-import urllib.request
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from logging_config import setup_logging
+from guardian_client import GuardianClient
+
+from supervisor_client import SupervisorClient
+
+
 logger = setup_logging()
+app = FastAPI()
 
 
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == "/health":
-            logger.info("Health check received")
-            self.send_response(200)
-            self.send_header("Content-type", "application/json")
-            self.end_headers()
-            self.wfile.write(b'{"status": "ok"}')
+supervisor = SupervisorClient()
 
-        elif self.path == "/issues":
-            logger.info("Issues requested")
+@app.get("/ha/info")
+async def ha_info():
+    logger.info({"event": "ha_info_requested"})
+    try:
+        data = await supervisor._get("/info")
+        return data
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+    
+    
+# Configure Guardian client (placeholder IP for now)
+GUARDIAN_IP = os.environ.get("GUARDIAN_IP", "http://10.0.0.140")
+guardian = GuardianClient(base_url=GUARDIAN_IP)
 
-            issues = {
-                "issues": [
-                    {"id": 1, "title": "Example issue", "severity": "low"},
-                    {"id": 2, "title": "Another issue", "severity": "medium"}
-                ]
-            }
 
-            payload = json.dumps(issues).encode("utf-8")
+# ---------------------------
+# Health Endpoint
+# ---------------------------
+@app.get("/health")
+async def health():
+    logger.info({"event": "health_check"})
+    return {"status": "ok"}
 
-            self.send_response(200)
-            self.send_header("Content-type", "application/json")
-            self.end_headers()
-            self.wfile.write(payload)
 
-        elif self.path == "/supervisor-test":
-            logger.info("Supervisor test requested")
+# ---------------------------
+# Issues Endpoint (static for now)
+# ---------------------------
+@app.get("/issues")
+async def issues():
+    logger.info({"event": "issues_requested"})
+    return {
+        "issues": [
+            {"id": 1, "title": "Example issue", "severity": "low"},
+            {"id": 2, "title": "Another issue", "severity": "medium"},
+        ]
+    }
 
-            token = os.environ.get("SUPERVISOR_TOKEN")
-            if not token:
-                logger.error("Supervisor token not found")
-                self.send_response(500)
-                self.end_headers()
-                return
 
-            req = urllib.request.Request(
-                "http://supervisor/info",
-                headers={"Authorization": f"Bearer {token}"}
-            )
+# ---------------------------
+# Guardian Ping
+# ---------------------------
+@app.get("/guardian/ping")
+async def guardian_ping():
+    logger.info({"event": "guardian_ping_requested"})
+    return await guardian.ping()
 
-            try:
-                with urllib.request.urlopen(req) as response:
-                    data = response.read()
-                    self.send_response(200)
-                    self.send_header("Content-type", "application/json")
-                    self.end_headers()
-                    self.wfile.write(data)
-            except Exception as e:
-                logger.error(f"Supervisor API error: {e}")
-                self.send_response(500)
-                self.end_headers()
 
-        else:
-            logger.info(f"Unknown path requested: {self.path}")
-            self.send_response(404)
-            self.end_headers()
+# ---------------------------
+# Supervisor Test (HA only)
+# ---------------------------
+@app.get("/supervisor-test")
+async def supervisor_test():
+    logger.info({"event": "supervisor_test_requested"})
 
-def run():
-    logger.info("Starting Guardian server on port 8099")
-    server = HTTPServer(("", 8099), Handler)
-    server.serve_forever()
+    token = os.environ.get("SUPERVISOR_TOKEN")
+    if not token:
+        logger.error("Supervisor token not found")
+        return JSONResponse(status_code=500, content={"error": "No token"})
 
+    try:
+        import urllib.request
+
+        req = urllib.request.Request(
+            "http://supervisor/info",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        with urllib.request.urlopen(req) as response:
+            data = response.read().decode("utf-8")
+            return JSONResponse(content=json.loads(data))
+
+    except Exception as e:
+        logger.error(f"Supervisor API error: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+# ---------------------------
+# Uvicorn Entrypoint
+# ---------------------------
 if __name__ == "__main__":
-    run()
+    import uvicorn
+
+    logger.info("Starting FastAPI Guardian server on port 8099")
+    uvicorn.run(app, host="0.0.0.0", port=8099)
