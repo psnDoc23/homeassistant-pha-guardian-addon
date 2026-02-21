@@ -37,4 +37,6 @@ class SupervisorClient:
             logger.error({"event": "supervisor_error", "url": url, "error": str(e)})
             raise
 
-        
+    async def get_logs(self):
+        return await self._get("/logs")
+

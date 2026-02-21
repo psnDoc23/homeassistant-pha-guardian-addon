@@ -24,7 +24,7 @@ async def ha_info():
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
     
-    
+
 # Configure Guardian client (placeholder IP for now)
 GUARDIAN_IP = os.environ.get("GUARDIAN_IP", "http://10.0.0.140")
 guardian = GuardianClient(base_url=GUARDIAN_IP)
@@ -89,6 +89,16 @@ async def supervisor_test():
         logger.error(f"Supervisor API error: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
+
+@app.get("/ha/logs")
+async def ha_logs():
+    logger.info({"event": "ha_logs_requested"})
+    try:
+        data = await supervisor.get_logs()
+        return data
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+    
 
 # ---------------------------
 # Uvicorn Entrypoint
