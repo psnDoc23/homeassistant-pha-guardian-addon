@@ -1,8 +1,8 @@
 {
   "name": "PHA Guardian",
-  "version": "0.0.53",
+  "version": "0.0.54",
   "slug": "pha_guardian",
-  "description": "Guardian API monitoring tool",
+  "description": "Guardian API monitoring tool - sanity check saturday",
   "arch": ["aarch64", "amd64", "armv7"],
   "startup": "services",
   "boot": "auto",
