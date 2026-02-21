@@ -1,9 +1,7 @@
 {
-  "name": "PHA Guardian Add-ons Features Branch",
+  "name": "PHA Guardian (Beta/Feature)",
   "url": "https://github.com/psnDoc23/homeassistant-pha-guardian-addon",
-  "maintainer": "Dave",
-  "version": "1.0.0",
-  "branch": "feature/structured-logging"
+  "maintainer": "Dave"
 }
 
 
