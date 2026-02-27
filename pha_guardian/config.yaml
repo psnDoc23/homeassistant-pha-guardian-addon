@@ -1,5 +1,5 @@
 name: "PHA Guardian"
-version: "0.0.60"
+version: "0.0.61"
 slug: "pha_guardian_dev"
 description: "Guardian API monitoring tool (fixed Dockerfile copy)"
 hassio_api: true
