@@ -5,21 +5,22 @@ from fastapi.responses import JSONResponse
 
 from logging_config import setup_logging
 from guardian_client import GuardianClient
-
 from supervisor_client import SupervisorClient
+from mock_supervisor import router as mock_supervisor_router
 
 
 logger = setup_logging()
 app = FastAPI()
-
+app.include_router(mock_supervisor_router)
 
 supervisor = SupervisorClient()
+
 
 @app.get("/ha/info")
 async def ha_info():
     logger.info({"event": "ha_info_requested"})
     try:
-        data = await supervisor._get("/info")
+        data = await supervisor._get("/core/info")
         return data
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
@@ -94,10 +95,11 @@ async def supervisor_test():
 async def ha_logs():
     logger.info({"event": "ha_logs_requested"})
     try:
-        data = await supervisor.get_logs()
+        data = await supervisor._get("/core/logs")
         return data
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+    
     
 
 # ---------------------------

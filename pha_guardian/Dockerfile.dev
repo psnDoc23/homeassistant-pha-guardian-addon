@@ -9,6 +9,7 @@ COPY server.py .
 COPY logging_config.py .
 COPY guardian_client.py .
 COPY supervisor_client.py .
+COPY mock_supervisor.py . 
 
 COPY run.sh .
 

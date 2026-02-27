@@ -6,11 +6,17 @@ logger = getLogger(__name__)
 
 class SupervisorClient:
     def __init__(self):
-        self.base_url = "http://supervisor"
-        self.token = os.environ.get("SUPERVISOR_TOKEN")
+        dev_mode = os.environ.get("DEV_MODE") == "1"
 
-        if not self.token:
-            logger.warning("SUPERVISOR_TOKEN not found — running in local dev mode")
+        if dev_mode:
+            self.base_url = "http://localhost:8099"
+            self.token = None
+            logger.warning("Running in DEV_MODE — using mock Supervisor at localhost:8099")
+        else:
+            self.base_url = "http://supervisor"
+            self.token = os.environ.get("SUPERVISOR_TOKEN")
+            if not self.token:
+                logger.warning("SUPERVISOR_TOKEN not found — Supervisor calls will fail")
 
         self.client = httpx.AsyncClient(
             timeout=10.0,
@@ -18,13 +24,6 @@ class SupervisorClient:
         )
 
     async def _get(self, path: str):
-        if not self.token:
-            # Local dev mode — return stub
-            return {
-                "error": "Supervisor API not available in local dev environment",
-                "path": path
-            }
-
         url = f"{self.base_url}{path}"
         logger.info({"event": "supervisor_request", "url": url})
 
