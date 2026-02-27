@@ -1,7 +1,8 @@
 name: "PHA Guardian"
-version: "0.0.61"
+version: "0.0.62"
 slug: "pha_guardian_dev"
 description: "Guardian API monitoring tool (fixed Dockerfile copy)"
+homeassistant_api: true        # ← REQUIRED
 hassio_api: true
 arch:
   - aarch64
@@ -19,7 +20,7 @@ ports_description:
 map:
   - "config:rw"
   - "share:rw"
-  - "supervisor_token:rw"   # ← REQUIRED
+  - "supervisor_token:rw"      # ← REQUIRED
 options: {}
 schema: {}
 
