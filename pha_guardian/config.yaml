@@ -19,5 +19,7 @@ ports_description:
 map:
   - "config:rw"
   - "share:rw"
+  - "supervisor_token:rw"   # ← REQUIRED
 options: {}
 schema: {}
+
