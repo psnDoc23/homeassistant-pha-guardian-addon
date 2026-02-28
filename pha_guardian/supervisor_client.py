@@ -6,49 +6,28 @@ logger = getLogger(__name__)
 
 class SupervisorClient:
     def __init__(self):
-        # 1. DEBUG: This will show us every variable HA is actually passing in
-        logger.info(f"DEBUG: Available Env Vars: {list(os.environ.keys())}")
+        self.base_url = "http://supervisor"
+        # Don't fail here, just prepare
+        self.client = httpx.AsyncClient(timeout=10.0)
 
-        dev_mode = os.environ.get("DEV_MODE") == "1"
-
-        if dev_mode:
-            self.base_url = "http://localhost:8099"
-            self.token = None
-            logger.warning("Running in DEV_MODE — using mock Supervisor at localhost:8099")
-        else:
-            self.base_url = "http://supervisor"
-            
-            # 2. Try both modern and legacy token names
-            self.token = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN")
-            
-            if not self.token:
-                logger.warning("SUPERVISOR_TOKEN not found — Supervisor calls will fail")
-
-        # 3. Ensure headers are only set if we actually have a token
-        headers = {}
-        if self.token:
-            headers["Authorization"] = f"Bearer {self.token}"
-
-        self.client = httpx.AsyncClient(
-            timeout=10.0,
-            headers=headers
-        )
+    @property
+    def token(self):
+        # Fetch it fresh every time or cache it
+        t = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN")
+        if not t:
+            logger.error("SUPERVISOR_TOKEN is missing from environment!")
+        return t
 
     async def _get(self, path: str):
+        token = self.token # Get the token right now
+        if not token:
+            raise Exception("Authentication token missing")
+            
         url = f"{self.base_url}{path}"
-        logger.info({"event": "supervisor_request", "url": url})
-
-        try:
-            response = await self.client.get(url)
-            response.raise_for_status()
-            return response.json()
-
-        except Exception as e:
-            logger.error({"event": "supervisor_error", "url": url, "error": str(e)})
-            raise
-
-    async def get_logs(self):
-        return await self._get("/logs")
+        headers = {"Authorization": f"Bearer {token}"}
         
-
-        
+        response = await self.client.get(url, headers=headers)
+        response.raise_for_status()
+        return response.json()
+    
+    

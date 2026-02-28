@@ -18,12 +18,8 @@ supervisor = SupervisorClient()
 
 @app.get("/ha/info")
 async def ha_info():
-    logger.info({"event": "ha_info_requested"})
-    try:
-        data = await supervisor._get("/core/info")
-        return data
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+    # This now uses the clean logic inside the client
+    return await supervisor._get("/core/info")
     
 
 # Configure Guardian client (placeholder IP for now)
@@ -68,27 +64,10 @@ async def guardian_ping():
 # ---------------------------
 @app.get("/supervisor-test")
 async def supervisor_test():
-    logger.info({"event": "supervisor_test_requested"})
+    # No more 'self.token' here! 
+    # Just call a method on your supervisor object
+    return await supervisor._get("/info")
 
-    self.token = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN")
-    if not token:
-        logger.error("Supervisor token not found")
-        return JSONResponse(status_code=500, content={"error": "No token"})
-
-    try:
-        import urllib.request
-
-        req = urllib.request.Request(
-            "http://supervisor/info",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        with urllib.request.urlopen(req) as response:
-            data = response.read().decode("utf-8")
-            return JSONResponse(content=json.loads(data))
-
-    except Exception as e:
-        logger.error(f"Supervisor API error: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @app.get("/ha/logs")
