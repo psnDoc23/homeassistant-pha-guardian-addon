@@ -70,7 +70,7 @@ async def guardian_ping():
 async def supervisor_test():
     logger.info({"event": "supervisor_test_requested"})
 
-    token = os.environ.get("SUPERVISOR_TOKEN")
+    self.token = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN")
     if not token:
         logger.error("Supervisor token not found")
         return JSONResponse(status_code=500, content={"error": "No token"})
