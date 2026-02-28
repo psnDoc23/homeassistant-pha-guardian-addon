@@ -1,5 +1,5 @@
 name: "PHA Guardian"
-version: "0.0.64" # Incremented version to ensure a clean rebuild
+version: "0.0.65" # Incremented version to ensure a clean rebuild
 slug: "pha_guardian_dev"
 description: "Guardian API monitoring tool"
 homeassistant_api: true
