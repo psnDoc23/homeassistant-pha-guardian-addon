@@ -23,6 +23,6 @@ map:
   - config:rw
   - share:rw
 options:
-  guardian_ip: "10.0.0.19"
+  guardian_ip: "10.0.0.140"
 schema:
   guardian_ip: str

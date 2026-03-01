@@ -22,17 +22,22 @@ async def ha_info():
     return await supervisor._get("/core/info")
     
 
-# This will now get the value set by run.sh from the HA Options
+# 1. Initialize as None so the variable exists in the namespace
+guardian = None
+
+# 2. Get the IP from the environment
 GUARDIAN_IP = os.environ.get("GUARDIAN_IP")
+
 
 if not GUARDIAN_IP:
     logger.error("Guardian IP not configured in add-on options!")
 else:
-    # Ensure it has the http:// prefix if your client expects it
     if not GUARDIAN_IP.startswith("http"):
         GUARDIAN_IP = f"http://{GUARDIAN_IP}"
-    
+    # 3. Only create the client if we have an IP
     guardian = GuardianClient(base_url=GUARDIAN_IP)
+
+
 
 
 
@@ -65,6 +70,12 @@ async def issues():
 @app.get("/guardian/ping")
 async def guardian_ping():
     logger.info({"event": "guardian_ping_requested"})
+    # 4. Check if the client exists before calling ping
+    if not guardian:
+        return JSONResponse(
+            status_code=503, 
+            content={"error": "Guardian client not initialized. Check add-on configuration."}
+        )
     return await guardian.ping()
 
 
