@@ -22,9 +22,18 @@ async def ha_info():
     return await supervisor._get("/core/info")
     
 
-# Configure Guardian client (placeholder IP for now)
-GUARDIAN_IP = os.environ.get("GUARDIAN_IP", "http://10.0.0.140")
-guardian = GuardianClient(base_url=GUARDIAN_IP)
+# This will now get the value set by run.sh from the HA Options
+GUARDIAN_IP = os.environ.get("GUARDIAN_IP")
+
+if not GUARDIAN_IP:
+    logger.error("Guardian IP not configured in add-on options!")
+else:
+    # Ensure it has the http:// prefix if your client expects it
+    if not GUARDIAN_IP.startswith("http"):
+        GUARDIAN_IP = f"http://{GUARDIAN_IP}"
+    
+    guardian = GuardianClient(base_url=GUARDIAN_IP)
+
 
 
 # ---------------------------

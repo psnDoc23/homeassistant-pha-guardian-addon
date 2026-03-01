@@ -1,8 +1,8 @@
 name: "PHA Guardian"
-version: "0.0.67" # Incremented version to ensure a clean rebuild
+version: "0.0.68"
 slug: "pha_guardian_dev"
 description: "Guardian API monitoring tool"
-homeassistant_api: true
+# Use this for Supervisor access
 hassio_api: true
 hassio_role: admin
 arch:
@@ -11,17 +11,18 @@ arch:
   - armv7
 startup: services
 boot: auto
-host_network: true
+# Set to false to use standard Docker routing (safer for API calls)
+host_network: false
+# Ensure the container knows it's an S6-overlay app
 init: false
-privileged: []
 ports:
   8099/tcp: 8099
 ports_description:
-  8099/tcp: "Guardian API"
+  8099/tcp: "Guardian API Port"
 map:
-  - "config:rw"
-  - "share:rw"
-# Removed supervisor_token from map; it's handled via hassio_api: true
-options: {}
-schema: {}
-
+  - config:rw
+  - share:rw
+options:
+  guardian_ip: "10.0.0.19"
+schema:
+  guardian_ip: str

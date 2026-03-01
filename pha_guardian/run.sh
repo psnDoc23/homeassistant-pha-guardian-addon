@@ -1,8 +1,9 @@
 #!/usr/bin/with-contenv bashio
 
-# https://gemini.google.com/app/1ee4bb599a9fa8e7?pli=1
-# Use bashio's built-in logging for that official HA look
-bashio::log.info "Starting PHA Guardian add-on..."
+# Get the IP from the user's config options
+export GUARDIAN_IP=$(bashio::config 'guardian_ip')
+
+bashio::log.info "Starting PHA Guardian with device at ${GUARDIAN_IP}..."
 
 # Check if we are in dev mode (optional, but helpful based on your Python code)
 if bashio::config.has_value 'dev_mode'; then
