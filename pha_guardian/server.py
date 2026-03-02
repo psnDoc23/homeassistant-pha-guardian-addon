@@ -10,10 +10,20 @@ from mock_supervisor import router as mock_supervisor_router
 
 
 logger = setup_logging()
+
 app = FastAPI()
 app.include_router(mock_supervisor_router)
 
 supervisor = SupervisorClient()
+
+
+@app.get("/debug/env")
+async def debug_env():
+    return {
+        "SUPERVISOR_TOKEN": os.environ.get("SUPERVISOR_TOKEN", "MISSING"),
+        "HASSIO_TOKEN": os.environ.get("HASSIO_TOKEN", "MISSING"),
+        "GUARDIAN_IP": os.environ.get("GUARDIAN_IP", "MISSING"),
+    }
 
 
 @app.get("/ha/info")
@@ -22,9 +32,11 @@ async def ha_info():
     return await supervisor._get("/core/info")
     
 
-# server.py
+
 guardian = None
 GUARDIAN_IP = os.environ.get("GUARDIAN_IP")
+print("GUARDIAN_IP", GUARDIAN_IP)
+
 
 if not GUARDIAN_IP:
     # This is what you are seeing now because bashio failed (Forbidden)
@@ -33,7 +45,9 @@ else:
     # This will run once the "Forbidden" error is fixed
     if not GUARDIAN_IP.startswith("http"):
         GUARDIAN_IP = f"http://{GUARDIAN_IP}"
+    
     guardian = GuardianClient(base_url=GUARDIAN_IP)
+
 
 @app.get("/guardian/ping")
 async def guardian_ping():

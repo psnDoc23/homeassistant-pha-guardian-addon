@@ -14,6 +14,10 @@ class SupervisorClient:
     def token(self):
         # Fetch it fresh every time or cache it
         t = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN")
+        print(os.environ.get("SUPERVISOR_TOKEN"))
+        print(os.environ.get("HASSIO_TOKEN"))
+        print(t) 
+
         if not t:
             logger.error("SUPERVISOR_TOKEN is missing from environment!")
         return t
@@ -29,5 +33,4 @@ class SupervisorClient:
         response = await self.client.get(url, headers=headers)
         response.raise_for_status()
         return response.json()
-    
     
