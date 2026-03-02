@@ -22,4 +22,7 @@ RUN chmod +x /app/run.sh
 
 # 6. Start the add-on using the bashio entrypoint
 # This is the bridge that injects SUPERVISOR_TOKEN into your script
-CMD [ "/usr/bin/bashio", "/app/run.sh" ]
+# CMD [ "/usr/bin/bashio", "/app/run.sh" ]
+
+#6 the claude way
+CMD [ "/bin/bash", "/app/run.sh" ]
