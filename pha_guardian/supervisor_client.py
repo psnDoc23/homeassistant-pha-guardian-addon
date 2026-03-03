@@ -1,6 +1,8 @@
 import os
 import httpx
 from logging import getLogger
+import re
+
 
 logger = getLogger(__name__)
 
@@ -34,6 +36,8 @@ class SupervisorClient:
         response.raise_for_status()
         return response.json()
 
+
+
     async def _get_text(self, path: str):
         token = self.token
         if not token:
@@ -44,4 +48,7 @@ class SupervisorClient:
         
         response = await self.client.get(url, headers=headers)
         response.raise_for_status()
-        return {"logs": response.text}
+        clean = re.sub(r'\x1b\[[0-9;]*m', '', response.text)
+        return {"logs": clean}
+
+    
