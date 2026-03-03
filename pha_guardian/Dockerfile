@@ -25,4 +25,4 @@ RUN chmod +x /app/run.sh
 # CMD [ "/usr/bin/bashio", "/app/run.sh" ]
 
 #6 the claude way
-CMD [ "/bin/bash", "/app/run.sh" ]
+CMD [ "/app/run.sh" ]
