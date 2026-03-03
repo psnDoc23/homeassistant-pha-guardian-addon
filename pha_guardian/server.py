@@ -98,7 +98,7 @@ async def supervisor_test():
 async def ha_logs():
     logger.info({"event": "ha_logs_requested"})
     try:
-        data = await supervisor._get("/core/logs")
+        data = await supervisor._get_text("/core/logs")
         return data
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})

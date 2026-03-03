@@ -23,14 +23,25 @@ class SupervisorClient:
         return t
 
     async def _get(self, path: str):
-        token = self.token # Get the token right now
+        token = self.token
         if not token:
             raise Exception("Authentication token missing")
-            
+        
         url = f"{self.base_url}{path}"
         headers = {"Authorization": f"Bearer {token}"}
         
         response = await self.client.get(url, headers=headers)
         response.raise_for_status()
         return response.json()
-    
+
+    async def _get_text(self, path: str):
+        token = self.token
+        if not token:
+            raise Exception("Authentication token missing")
+        
+        url = f"{self.base_url}{path}"
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        response = await self.client.get(url, headers=headers)
+        response.raise_for_status()
+        return {"logs": response.text}
