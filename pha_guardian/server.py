@@ -4,7 +4,6 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from logging_config import setup_logging
-from guardian_client import GuardianClient
 from supervisor_client import SupervisorClient
 from mock_supervisor import router as mock_supervisor_router
 
@@ -15,6 +14,13 @@ app = FastAPI()
 app.include_router(mock_supervisor_router)
 
 supervisor = SupervisorClient()
+
+
+# needed?
+guardian = None
+GUARDIAN_IP = os.environ.get("GUARDIAN_IP")
+print("GUARDIAN_IP", GUARDIAN_IP)
+
 
 
 @app.get("/debug/env")
@@ -30,31 +36,6 @@ async def debug_env():
 async def ha_info():
     # This now uses the clean logic inside the client
     return await supervisor._get("/core/info")
-    
-
-
-guardian = None
-GUARDIAN_IP = os.environ.get("GUARDIAN_IP")
-print("GUARDIAN_IP", GUARDIAN_IP)
-
-
-if not GUARDIAN_IP:
-    # This is what you are seeing now because bashio failed (Forbidden)
-    logger.error("Guardian IP not configured in add-on options!")
-else:
-    # This will run once the "Forbidden" error is fixed
-    if not GUARDIAN_IP.startswith("http"):
-        GUARDIAN_IP = f"http://{GUARDIAN_IP}"
-    
-    guardian = GuardianClient(base_url=GUARDIAN_IP)
-
-
-@app.get("/guardian/ping")
-async def guardian_ping():
-    if not guardian:
-        return JSONResponse(status_code=503, content={"error": "Client not initialized"})
-    return await guardian.ping()
-
 
 
 
@@ -79,8 +60,6 @@ async def issues():
             {"id": 2, "title": "Another issue", "severity": "medium"},
         ]
     }
-
-
 
 
 # ---------------------------
