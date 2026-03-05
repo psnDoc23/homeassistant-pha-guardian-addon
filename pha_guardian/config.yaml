@@ -24,5 +24,7 @@ map:
   - share:rw
 options:
   guardian_ip: "10.0.0.140"
+  dev_mode: false
 schema:
   guardian_ip: str
+  dev_mode: bool
