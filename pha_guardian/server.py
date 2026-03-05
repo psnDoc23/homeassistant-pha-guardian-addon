@@ -5,21 +5,26 @@ from fastapi.responses import JSONResponse
 
 from logging_config import setup_logging
 from supervisor_client import SupervisorClient
-from mock_supervisor import router as mock_supervisor_router
 
 
 logger = setup_logging()
 
 app = FastAPI()
-app.include_router(mock_supervisor_router)
 
 supervisor = SupervisorClient()
 
 
-# needed?
-guardian = None
-GUARDIAN_IP = os.environ.get("GUARDIAN_IP")
-print("GUARDIAN_IP", GUARDIAN_IP)
+# determine whether in dev mode or not
+DEV_MODE = os.environ.get("DEV_MODE", "false").lower() == "true"
+print("DEV_MODE: ", DEV_MODE)
+
+
+if DEV_MODE:
+    from mock_supervisor import router as mock_supervisor_router
+    app.include_router(mock_supervisor_router)
+    logger.info("DEV_MODE enabled — mock supervisor routes loaded")
+else:
+    logger.info("Production mode — using real Supervisor")
 
 
 
@@ -62,16 +67,6 @@ async def issues():
     }
 
 
-# ---------------------------
-# Supervisor Test (HA only)
-# ---------------------------
-@app.get("/supervisor-test")
-async def supervisor_test():
-    # No more 'self.token' here! 
-    # Just call a method on your supervisor object
-    return await supervisor._get("/info")
-
-
 
 @app.get("/ha/logs")
 async def ha_logs():
@@ -82,7 +77,7 @@ async def ha_logs():
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
     
-    
+ 
 
 # ---------------------------
 # Uvicorn Entrypoint
