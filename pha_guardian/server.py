@@ -16,7 +16,8 @@ supervisor = SupervisorClient()
 
 # determine whether in dev mode or not
 DEV_MODE = os.environ.get("DEV_MODE", "false").lower() == "true"
-print("DEV_MODE: ", DEV_MODE)
+logger.info(f"DEV_MODE: {DEV_MODE}")
+
 
 
 if DEV_MODE:

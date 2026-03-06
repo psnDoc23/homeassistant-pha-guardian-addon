@@ -5,14 +5,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY server.py .
-COPY logging_config.py .
-COPY guardian_client.py .
-COPY supervisor_client.py .
-COPY mock_supervisor.py . 
+COPY . .
 
-COPY run.sh .
 
-RUN chmod +x run.sh
+RUN chmod +x run.dev.sh
 
-CMD ["./run.sh"]
+CMD ["./run.dev.sh"]
+

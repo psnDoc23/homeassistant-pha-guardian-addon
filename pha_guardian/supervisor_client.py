@@ -14,11 +14,10 @@ class SupervisorClient:
 
     @property
     def token(self):
-        # Fetch it fresh every time or cache it
         t = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN")
-        print(os.environ.get("SUPERVISOR_TOKEN"))
-        print(os.environ.get("HASSIO_TOKEN"))
-        print(t) 
+        logger.debug(f"SUPERVISOR_TOKEN present: {bool(os.environ.get('SUPERVISOR_TOKEN'))}")
+        logger.debug(f"HASSIO_TOKEN present: {bool(os.environ.get('HASSIO_TOKEN'))}")
+
 
         if not t:
             logger.error("SUPERVISOR_TOKEN is missing from environment!")
