@@ -28,7 +28,9 @@ else:
     logger.info("Production mode — using real Supervisor")
 
 
-
+# ---------------------------
+# Retrieve vitals Endpoint 
+# ---------------------------
 @app.get("/debug/env")
 async def debug_env():
     return {
@@ -38,15 +40,8 @@ async def debug_env():
     }
 
 
-@app.get("/ha/info")
-async def ha_info():
-    # This now uses the clean logic inside the client
-    return await supervisor._get("/core/info")
-
-
-
 # ---------------------------
-# Health Endpoint
+# Health Endpoint 
 # ---------------------------
 @app.get("/health")
 async def health():
@@ -56,6 +51,7 @@ async def health():
 
 # ---------------------------
 # Issues Endpoint (static for now)
+# In the future this will be home to the real analyzed results...
 # ---------------------------
 @app.get("/issues")
 async def issues():
@@ -67,8 +63,9 @@ async def issues():
         ]
     }
 
-
-
+# ---------------------------
+# Start supervisor Endpoints 
+# ---------------------------
 @app.get("/ha/logs")
 async def ha_logs():
     logger.info({"event": "ha_logs_requested"})
@@ -79,6 +76,13 @@ async def ha_logs():
         return JSONResponse(status_code=500, content={"error": str(e)})
     
  
+@app.get("/ha/info")
+async def ha_info():
+    # This now uses the clean logic inside the client
+    return await supervisor._get("/core/info")
+
+
+
 
 # ---------------------------
 # Uvicorn Entrypoint
