@@ -40,10 +40,6 @@ async def debug_env():
     }
 
 
-@app.get("/debug/core-test")
-async def debug_core_test():
-    return await supervisor._get_core("/")
-
 
 # ---------------------------
 # Health Endpoint 
