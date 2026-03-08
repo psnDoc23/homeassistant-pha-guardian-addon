@@ -52,7 +52,7 @@ class SupervisorClient:
 
 
     async def get_state(self, entity_id: str):
-        return await self._get(f"/core/api/states/{entity_id}")
+        return await self._get(f"/homeassistant/api/states/{entity_id}")
 
 
 
