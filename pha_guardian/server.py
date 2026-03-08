@@ -92,6 +92,8 @@ async def ha_state(entity_id: str):
 
 
 
+
+
 # ---------------------------
 # Uvicorn Entrypoint
 # ---------------------------

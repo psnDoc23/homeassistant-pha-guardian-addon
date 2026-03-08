@@ -52,7 +52,23 @@ class SupervisorClient:
 
 
     async def get_state(self, entity_id: str):
-        return await self._get(f"/homeassistant/api/states/{entity_id}")
+        return await self._get_core(f"/states/{entity_id}")
+
+
+    async def _get_core(self, path: str):
+        token = self.token
+        if not token:
+            raise Exception("Authentication token missing")
+        
+        url = f"{self.base_url}/core/api{path}"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "X-Hassio-Key": token,
+        }
+        
+        response = await self.client.get(url, headers=headers)
+        response.raise_for_status()
+        return response.json()
 
 
 
