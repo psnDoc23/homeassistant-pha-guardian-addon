@@ -71,5 +71,8 @@ class SupervisorClient:
         return response.json()
 
 
+    async def get_logbook(self, entity_id: str):
+        return await self._get_core(f"/logbook?entity_id={entity_id}")
+
 
 
