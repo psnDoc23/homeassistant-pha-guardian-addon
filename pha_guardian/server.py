@@ -82,6 +82,14 @@ async def ha_info():
     return await supervisor._get("/core/info")
 
 
+# ---------------------------
+# State Endpoint 
+# ---------------------------
+@app.get("/ha/state/{entity_id}")
+async def ha_state(entity_id: str):
+    logger.info({"event": "ha_state_requested", "entity_id": entity_id})
+    return await supervisor.get_state(entity_id)
+
 
 
 # ---------------------------

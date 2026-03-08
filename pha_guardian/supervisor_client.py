@@ -50,4 +50,9 @@ class SupervisorClient:
         clean = re.sub(r'\x1b\[[0-9;]*m', '', response.text)
         return {"logs": clean}
 
-    
+
+    async def get_state(self, entity_id: str):
+        return await self._get(f"/core/api/states/{entity_id}")
+
+
+
