@@ -63,12 +63,13 @@ class SupervisorClient:
         url = f"{self.base_url}/core/api{path}"
         headers = {
             "Authorization": f"Bearer {token}",
-            "X-Hassio-Key": token,
+            "X-HA-Access": token,
         }
         
         response = await self.client.get(url, headers=headers)
         response.raise_for_status()
         return response.json()
+
 
 
 
