@@ -92,6 +92,13 @@ async def ha_state(entity_id: str):
     return await supervisor.get_state(entity_id)
 
 
+# ---------------------------
+# Logbook Endpoint 
+# ---------------------------
+@app.get("/ha/logbook/{entity_id}")
+async def ha_logbook(entity_id: str):
+    logger.info({"event": "ha_logbook_requested", "entity_id": entity_id})
+    return await supervisor.get_logbook(entity_id)
 
 
 
