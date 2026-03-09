@@ -72,5 +72,5 @@ class SupervisorClient:
 
 
     async def get_logbook(self, entity_id: str):
-        return await self._get_core(f"/logbook?entity_id={entity_id}&minimal_response=false")
+        return await self._get_core(f"/logbook?entity={entity_id}")
 
