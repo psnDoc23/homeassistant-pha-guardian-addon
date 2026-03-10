@@ -74,7 +74,8 @@ class SupervisorClient:
     async def get_logbook(self, entity_id: str):
         from datetime import datetime, timezone, timedelta
         start = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-        return await self._get_core(f"/logbook/{start}?entity_id={entity_id}&minimal_response=false")
+        data = await self._get_core(f"/logbook/{start}?entity_id={entity_id}&minimal_response=false")
+        return [entry for entry in data if entry.get("entity_id") == entity_id]
 
     
 
