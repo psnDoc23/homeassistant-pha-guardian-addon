@@ -98,19 +98,16 @@ async def ha_state(entity_id: str):
 # Logbook Endpoint 
 # ---------------------------
 @app.get("/ha/logbook/{entity_id}")
-async def ha_logbook(entity_id: str):
-    logger.info({"event": "ha_logbook_requested", "entity_id": entity_id})
-    return await supervisor.get_logbook(entity_id)
-
+async def ha_logbook(entity_id: str, hours: int = 24):
+    return await supervisor.get_logbook(entity_id, hours=hours)
 
 
 # ---------------------------
 # Dropout Analysis Endpoint
 # ---------------------------
 @app.get("/ha/analyze/dropouts/{entity_id}")
-async def analyze_entity_dropouts(entity_id: str):
-    logger.info({"event": "dropout_analysis_requested", "entity_id": entity_id})
-    entries = await supervisor.get_logbook(entity_id)
+async def analyze_entity_dropouts(entity_id: str, hours: int = 24):
+    entries = await supervisor.get_logbook(entity_id, hours=hours)
     return analyze_dropouts(entries)
 
 

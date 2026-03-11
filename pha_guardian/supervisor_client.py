@@ -71,9 +71,9 @@ class SupervisorClient:
         return response.json()
 
 
-    async def get_logbook(self, entity_id: str):
+    async def get_logbook(self, entity_id: str, hours: int = 24):
         from datetime import datetime, timezone, timedelta
-        start = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        start = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
         data = await self._get_core(f"/logbook/{start}?entity_id={entity_id}&minimal_response=false")
         return [entry for entry in data if entry.get("entity_id") == entity_id]
 

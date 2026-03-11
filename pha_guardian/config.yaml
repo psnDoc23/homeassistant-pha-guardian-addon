@@ -1,5 +1,5 @@
 name: "PHA Guardian"
-version: "0.0.97"
+version: "0.0.98"
 slug: "pha_guardian_dev"
 description: "Guardian API monitoring tool"
 # Use this for Supervisor access
