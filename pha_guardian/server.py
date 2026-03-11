@@ -6,6 +6,8 @@ from fastapi.responses import JSONResponse
 from logging_config import setup_logging
 from supervisor_client import SupervisorClient
 
+from analyzer import analyze_dropouts
+
 
 logger = setup_logging()
 
@@ -99,6 +101,17 @@ async def ha_state(entity_id: str):
 async def ha_logbook(entity_id: str):
     logger.info({"event": "ha_logbook_requested", "entity_id": entity_id})
     return await supervisor.get_logbook(entity_id)
+
+
+
+# ---------------------------
+# Dropout Analysis Endpoint
+# ---------------------------
+@app.get("/ha/analyze/dropouts/{entity_id}")
+async def analyze_entity_dropouts(entity_id: str):
+    logger.info({"event": "dropout_analysis_requested", "entity_id": entity_id})
+    entries = await supervisor.get_logbook(entity_id)
+    return analyze_dropouts(entries)
 
 
 
