@@ -102,6 +102,7 @@ async def ha_logbook(entity_id: str, hours: int = 24):
     return await supervisor.get_logbook(entity_id, hours=hours)
 
 
+
 # ---------------------------
 # Dropout Analysis Endpoint
 # ---------------------------
