@@ -42,6 +42,12 @@ async def debug_env():
     }
 
 
+# https://claude.ai/chat/c79fd47a-db84-47cc-a903-1bebebaa38e9
+@app.get("/debug/host-info")
+async def debug_host_info():
+    return await supervisor._get("/host/info")
+
+
 
 # ---------------------------
 # Health Endpoint 
