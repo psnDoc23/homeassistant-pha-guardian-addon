@@ -1,7 +1,14 @@
 # server.py
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+
+templates = Jinja2Templates(directory="/app/templates")
+
+
 
 from logging_config import setup_logging
 from supervisor_client import SupervisorClient
@@ -28,6 +35,15 @@ if DEV_MODE:
     logger.info("DEV_MODE enabled — mock supervisor routes loaded")
 else:
     logger.info("Production mode — using real Supervisor")
+
+
+# ---------------------------
+# Dashboard Endpoint 
+# ---------------------------
+@app.get("/", response_class=HTMLResponse)
+async def dashboard(request: Request):
+    return templates.TemplateResponse("dashboard.html", {"request": request})
+
 
 
 # ---------------------------

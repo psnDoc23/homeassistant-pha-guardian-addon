@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PHA Guardian</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 20px;
+            background: #f5f5f5;
+            color: #333;
+        }
+        h1 { color: #1a1a2e; }
+        #summary {
+            background: white;
+            border-radius: 8px;
+            padding: 16px 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+            font-size: 1.1em;
+        }
+        .issue {
+            background: white;
+            border-left: 5px solid #ccc;
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .issue.high  { border-left-color: #e74c3c; }
+        .issue.medium { border-left-color: #f39c12; }
+        .issue.low   { border-left-color: #3498db; }
+        .issue.unknown { border-left-color: #95a5a6; }
+        .issue-title { font-weight: bold; margin-bottom: 6px; }
+        .issue-detail { font-size: 0.9em; color: #666; }
+        .issue-severity {
+            font-size: 0.75em;
+            text-transform: uppercase;
+            font-weight: bold;
+            color: #999;
+            margin-top: 4px;
+        }
+        .dismiss-btn {
+            background: none;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 4px 10px;
+            cursor: pointer;
+            font-size: 0.85em;
+            color: #999;
+            white-space: nowrap;
+            margin-left: 16px;
+        }
+        .dismiss-btn:hover { background: #f0f0f0; }
+        #no-issues {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            text-align: center;
+            color: #27ae60;
+            font-size: 1.1em;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <h1>🛡️ PHA Guardian</h1>
+    <div id="summary">Loading...</div>
+    <div id="issues-list"></div>
+
+    <script>
+        const dismissed = new Set();
+
+        async function loadIssues() {
+            const res = await fetch('/issues');
+            const data = await res.json();
+            const issues = data.issues.filter(i => !dismissed.has(i.id));
+
+            const summary = document.getElementById('summary');
+            const list = document.getElementById('issues-list');
+
+            summary.textContent = issues.length === 0
+                ? '✅ No issues detected'
+                : `⚠️ ${issues.length} issue${issues.length > 1 ? 's' : ''} detected`;
+
+            list.innerHTML = '';
+
+            if (issues.length === 0) {
+                list.innerHTML = '<div id="no-issues">Your system looks healthy.</div>';
+                return;
+            }
+
+            issues.forEach(issue => {
+                const div = document.createElement('div');
+                div.className = `issue ${issue.severity}`;
+                div.innerHTML = `
+                    <div>
+                        <div class="issue-title">${issue.title}</div>
+                        <div class="issue-detail">${issue.detail || ''}</div>
+                        <div class="issue-severity">${issue.severity}</div>
+                    </div>
+                    <button class="dismiss-btn" onclick="dismiss('${issue.id}')">Dismiss</button>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        function dismiss(id) {
+            dismissed.add(id);
+            loadIssues();
+        }
+
+        loadIssues();
+    </script>
+</body>
+</html>
+
+
