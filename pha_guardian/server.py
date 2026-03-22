@@ -59,18 +59,22 @@ async def health():
 
 
 # ---------------------------
-# Issues Endpoint (static for now)
-# In the future this will be home to the real analyzed results...
+# Issues Endpoint
 # ---------------------------
 @app.get("/issues")
 async def issues():
     logger.info({"event": "issues_requested"})
-    return {
-        "issues": [
-            {"id": 1, "title": "Example issue", "severity": "low"},
-            {"id": 2, "title": "Another issue", "severity": "medium"},
-        ]
-    }
+    
+    from checkers.disk_space import check_disk_space
+    from checkers.usb_path import check_usb_path
+
+    all_issues = []
+    all_issues += await check_disk_space(supervisor)
+    all_issues += await check_usb_path(supervisor)
+
+    return {"issues": all_issues}
+
+
 
 # ---------------------------
 # Start supervisor Endpoints 
