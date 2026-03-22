@@ -22,7 +22,7 @@ async def check_disk_space(supervisor) -> list:
                 "id": "disk_space_low",
                 "title": "Low disk space",
                 "severity": "high",
-                "detail": f"{percent_free:.1f}% free ({disk_free}MB of {disk_total}MB)"
+                "detail": f"{percent_free:.1f}% free ({disk_free}GB of {disk_total}GB)"
             }]
 
         return []
@@ -35,4 +35,3 @@ async def check_disk_space(supervisor) -> list:
             "detail": str(e)
         }]
 
-        
