@@ -1,6 +1,6 @@
 # checkers/disk_space.py
 
-LOW_DISK_THRESHOLD_PERCENT = 10
+LOW_DISK_THRESHOLD_PERCENT = 190
 
 async def check_disk_space(supervisor) -> list:
     """
