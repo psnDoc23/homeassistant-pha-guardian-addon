@@ -63,6 +63,13 @@ async def debug_host_info():
     return await supervisor._get("/host/info")
 
 
+# debugging for the missed automations check
+# ref: https://claude.ai/chat/c79fd47a-db84-47cc-a903-1bebebaa38e9
+@app.get("/debug/automations")
+async def debug_automations():
+    return await supervisor._get_core("/config/automation/config/1774307529113")
+
+
 
 # ---------------------------
 # Health Endpoint 
