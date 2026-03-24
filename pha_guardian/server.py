@@ -158,6 +158,15 @@ async def analyze_entity_dropouts(entity_id: str, hours: int = 24):
 
 
 
+
+@app.get("/debug/missed-automation")
+async def debug_missed_automation():
+    from checkers.missed_automation import check_missed_automations
+    config = await supervisor._get_core("/config/automation/config/1774307529113")
+    return await check_missed_automations(supervisor, [config])
+
+
+
 # ---------------------------
 # Uvicorn Entrypoint
 # ---------------------------
