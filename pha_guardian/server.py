@@ -63,18 +63,6 @@ async def debug_host_info():
     return await supervisor._get("/host/info")
 
 
-# debugging for the missed automations check
-# ref: https://claude.ai/chat/c79fd47a-db84-47cc-a903-1bebebaa38e9
-@app.get("/debug/automations")
-async def debug_automations():
-    return await supervisor._get_core("/config/automation/config/1774307529113")
-
-
-
-@app.get("/debug/tester-bulb")
-async def debug_tester_bulb():
-    return await supervisor.get_logbook("light.hue_tester_bulb", hours=1)
-
 
 
 # ---------------------------
@@ -155,15 +143,6 @@ async def ha_logbook(entity_id: str, hours: int = 24):
 async def analyze_entity_dropouts(entity_id: str, hours: int = 24):
     entries = await supervisor.get_logbook(entity_id, hours=hours)
     return analyze_dropouts(entries)
-
-
-
-
-@app.get("/debug/missed-automation")
-async def debug_missed_automation():
-    from checkers.missed_automation import check_missed_automations
-    config = await supervisor._get_core("/config/automation/config/1774307529113")
-    return await check_missed_automations(supervisor, [config])
 
 
 
