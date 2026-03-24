@@ -103,18 +103,16 @@ def _get_target_entity(config: dict):
 
 
 def _build_trigger_dt(time_str: str):
-    """Builds a UTC datetime for today at the given local time string (HH:MM:SS)."""
+    """Builds a UTC datetime for today at the given UTC trigger time."""
     try:
         from datetime import date
-        import pytz
-        mountain = pytz.timezone("America/Denver")
         h, m, s = map(int, time_str.split(":"))
-        local_dt = mountain.localize(
-            datetime.combine(date.today(), datetime.min.time().replace(hour=h, minute=m, second=s))
-        )
-        return local_dt.astimezone(timezone.utc)
+        today = date.today()
+        naive_dt = datetime.combine(today, datetime.min.time().replace(hour=h, minute=m, second=s))
+        return naive_dt.replace(tzinfo=timezone.utc)
     except Exception:
         return None
+    
 
 
 def _make_issue(alias: str, entity_id: str, trigger_time: str) -> dict:
