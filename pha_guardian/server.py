@@ -68,6 +68,11 @@ async def debug_automations():
     return await supervisor._get_core("/config/automation/config/1774307529113")
 
 
+@app.get("/debug/tester-bulb")
+async def debug_tester_bulb():
+    return await supervisor.get_logbook("light.hue_tester_bulb", hours=2)
+
+
 # ---------------------------
 # Health Endpoint 
 # ---------------------------
