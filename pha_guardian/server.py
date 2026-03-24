@@ -95,10 +95,17 @@ async def issues():
     
     from checkers.disk_space import check_disk_space
     from checkers.usb_path import check_usb_path
+    from checkers.missed_automation import check_missed_automations
 
     all_issues = []
     all_issues += await check_disk_space(supervisor)
     all_issues += await check_usb_path(supervisor)
+
+    # Automation configs to monitor
+    automation_configs = [
+        await supervisor._get_core("/config/automation/config/1774307529113")
+    ]
+    all_issues += await check_missed_automations(supervisor, automation_configs)
 
     return {"issues": all_issues}
 
