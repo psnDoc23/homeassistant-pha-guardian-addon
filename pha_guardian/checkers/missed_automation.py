@@ -51,7 +51,7 @@ async def _check_single_automation(supervisor, config: dict):
             return None
 
         # Get logbook for the entity around the trigger time
-        entries = await supervisor.get_logbook(entity_id, hours=2)
+        entries = await supervisor.get_logbook(entity_id, hours=24)
 
         # Find the last state change after the trigger time
         post_trigger = [
@@ -68,9 +68,9 @@ async def _check_single_automation(supervisor, config: dict):
                 return _make_issue(alias, entity_id, trigger_time_str)
             return None
 
-        # Check the first state after the trigger time
-        first_post = post_trigger[0]
-        if first_post.get("state") == "on":
+        # Check the last state after the trigger time
+        last_post = post_trigger[-1]
+        if last_post.get("state") == "on":
             return _make_issue(alias, entity_id, trigger_time_str)
 
         return None
