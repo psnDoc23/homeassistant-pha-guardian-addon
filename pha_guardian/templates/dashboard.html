@@ -29,14 +29,16 @@
             padding: 16px 20px;
             margin-bottom: 16px;
             box-shadow: 0 1px 4px rgba(0,0,0,0.1);
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
         }
         .issue.high  { border-left-color: #e74c3c; }
         .issue.medium { border-left-color: #f39c12; }
         .issue.low   { border-left-color: #3498db; }
         .issue.unknown { border-left-color: #95a5a6; }
+        .issue-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
         .issue-title { font-weight: bold; margin-bottom: 6px; }
         .issue-detail { font-size: 0.9em; color: #666; }
         .issue-severity {
@@ -45,6 +47,11 @@
             font-weight: bold;
             color: #999;
             margin-top: 4px;
+        }
+        .issue-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
         }
         .dismiss-btn {
             background: none;
@@ -55,9 +62,35 @@
             font-size: 0.85em;
             color: #999;
             white-space: nowrap;
-            margin-left: 16px;
         }
         .dismiss-btn:hover { background: #f0f0f0; }
+        .fix-btn {
+            background: none;
+            border: 1px solid #3498db;
+            border-radius: 4px;
+            padding: 4px 10px;
+            cursor: pointer;
+            font-size: 0.85em;
+            color: #3498db;
+            white-space: nowrap;
+        }
+        .fix-btn:hover { background: #eaf4fb; }
+        .fix-section {
+            display: none;
+            margin-top: 12px;
+            padding: 12px;
+            background: #f0f7ff;
+            border-radius: 6px;
+            font-size: 0.9em;
+            color: #2c3e50;
+            border-left: 3px solid #3498db;
+        }
+        .fix-section.visible { display: block; }
+        .fix-label {
+            font-weight: bold;
+            margin-bottom: 4px;
+            color: #2980b9;
+        }
         #no-issues {
             background: white;
             border-radius: 8px;
@@ -100,15 +133,30 @@
                 const div = document.createElement('div');
                 div.className = `issue ${issue.severity}`;
                 div.innerHTML = `
-                    <div>
-                        <div class="issue-title">${issue.title}</div>
-                        <div class="issue-detail">${issue.detail || ''}</div>
-                        <div class="issue-severity">${issue.severity}</div>
+                    <div class="issue-header">
+                        <div>
+                            <div class="issue-title">${issue.title}</div>
+                            <div class="issue-detail">${issue.detail || ''}</div>
+                            <div class="issue-severity">${issue.severity}</div>
+                        </div>
+                        <div class="issue-actions">
+                            ${issue.suggestion ? `<button class="fix-btn" onclick="toggleFix('${issue.id}')">How to fix</button>` : ''}
+                            <button class="dismiss-btn" onclick="dismiss('${issue.id}')">Dismiss</button>
+                        </div>
                     </div>
-                    <button class="dismiss-btn" onclick="dismiss('${issue.id}')">Dismiss</button>
+                    ${issue.suggestion ? `
+                    <div class="fix-section" id="fix-${issue.id}">
+                        <div class="fix-label">💡 Suggested fix</div>
+                        <div>${issue.suggestion}</div>
+                    </div>` : ''}
                 `;
                 list.appendChild(div);
             });
+        }
+
+        function toggleFix(id) {
+            const section = document.getElementById(`fix-${id}`);
+            section.classList.toggle('visible');
         }
 
         function dismiss(id) {

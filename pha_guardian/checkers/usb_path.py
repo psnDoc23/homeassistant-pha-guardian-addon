@@ -25,11 +25,14 @@ async def check_usb_path(supervisor) -> list:
                     "detail": (
                         "A USB device path error was detected in HA logs. "
                         "If you recently rebooted, your device may have re-enumerated "
-                        "to a different path. Consider switching to a persistent path "
-                        "like /dev/serial/by-id/..."
+                        "to a different path."
+                    ),
+                    "suggestion": (
+                        "Switch to a persistent USB path like /dev/serial/by-id/... "
+                        "instead of /dev/ttyUSB0. In HA go to Settings → System → Hardware "
+                        "to find the persistent path for your device."
                     )
                 }]
-
         return []
 
     except Exception as e:

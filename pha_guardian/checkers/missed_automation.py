@@ -123,6 +123,11 @@ def _make_issue(alias: str, entity_id: str, trigger_time: str) -> dict:
         "detail": (
             f"'{alias}' was scheduled to turn off {entity_id} at {trigger_time} "
             f"but the entity appears to still be on."
+        ),
+        "suggestion": (
+            f"Check the automation trace in HA under Settings → Automations → "
+            f"'{alias}' → Traces to see why it may have failed. Also check if "
+            f"another automation or manual action is overriding it."
         )
     }
 

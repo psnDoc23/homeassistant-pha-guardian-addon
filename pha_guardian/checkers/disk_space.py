@@ -22,7 +22,12 @@ async def check_disk_space(supervisor) -> list:
                 "id": "disk_space_low",
                 "title": "Low disk space",
                 "severity": "high",
-                "detail": f"{percent_free:.1f}% free ({disk_free}GB of {disk_total}GB)"
+                "detail": f"{percent_free:.1f}% free ({disk_free}GB of {disk_total}GB)",
+                "suggestion": (
+                    "Free up space by clearing old logs, pruning local backups, "
+                    "or moving backups to external storage. Consider adding a larger "
+                    "SD card or SSD if this is a recurring issue."
+                )
             }]
 
         return []
