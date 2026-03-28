@@ -87,11 +87,13 @@ async def issues():
     all_issues += await check_disk_space(supervisor)
     all_issues += await check_usb_path(supervisor)
 
-    # Automation configs to monitor
-    automation_configs = [
-        await supervisor._get_core("/config/automation/config/1774307529113")
-    ]
-    all_issues += await check_missed_automations(supervisor, automation_configs)
+    try:
+        automation_configs = [
+            await supervisor._get_core("/config/automation/config/1774307529113")
+        ]
+        all_issues += await check_missed_automations(supervisor, automation_configs)
+    except Exception:
+        pass
 
     return {"issues": all_issues}
 
