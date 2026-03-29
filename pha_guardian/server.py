@@ -87,15 +87,22 @@ async def issues():
     all_issues += await check_disk_space(supervisor)
     all_issues += await check_usb_path(supervisor)
 
-    try:
-        automation_configs = [
-            await supervisor._get_core("/config/automation/config/1774307529113")
-        ]
+    # Load automation IDs from environment
+    automation_ids_raw = os.environ.get("AUTOMATION_IDS", "")
+    automation_ids = [aid.strip() for aid in automation_ids_raw.split(",") if aid.strip()]
+
+    if automation_ids:
+        automation_configs = []
+        for aid in automation_ids:
+            try:
+                config = await supervisor._get_core(f"/config/automation/config/{aid}")
+                automation_configs.append(config)
+            except Exception:
+                logger.warning(f"Could not fetch automation config for ID: {aid}")
         all_issues += await check_missed_automations(supervisor, automation_configs)
-    except Exception:
-        pass
 
     return {"issues": all_issues}
+    
 
 
 

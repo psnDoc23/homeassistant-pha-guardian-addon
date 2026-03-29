@@ -1,5 +1,5 @@
 name: "PHA Guardian"
-version: "0.0.123"
+version: "0.0.124"
 slug: "pha_guardian_dev"
 description: "Guardian API monitoring tool"
 # Use this for Supervisor access
@@ -26,6 +26,9 @@ map:
 options:
   guardian_ip: "10.0.0.140"
   dev_mode: false
+  automation_ids: []
 schema:
   guardian_ip: str
   dev_mode: bool
+  automation_ids:
+    - str
