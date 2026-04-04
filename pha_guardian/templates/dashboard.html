@@ -14,6 +14,7 @@
             color: #333;
         }
         h1 { color: #1a1a2e; }
+        h2 { color: #1a1a2e; font-size: 1.1em; margin-top: 32px; }
         #summary {
             background: white;
             border-radius: 8px;
@@ -100,6 +101,65 @@
             font-size: 1.1em;
             box-shadow: 0 1px 4px rgba(0,0,0,0.1);
         }
+        .scanner-section {
+            background: white;
+            border-radius: 8px;
+            padding: 16px 24px;
+            margin-top: 32px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+        }
+        .scanner-section h2 {
+            margin-top: 0;
+        }
+        .automation-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f0f0;
+            gap: 12px;
+        }
+        .automation-item:last-of-type {
+            border-bottom: none;
+        }
+        .automation-item input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        .automation-info {
+            flex: 1;
+        }
+        .automation-name {
+            font-weight: bold;
+            font-size: 0.95em;
+        }
+        .automation-meta {
+            font-size: 0.8em;
+            color: #999;
+            margin-top: 2px;
+        }
+        .save-btn {
+            background: #2980b9;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 20px;
+            cursor: pointer;
+            font-size: 0.9em;
+            margin-top: 16px;
+        }
+        .save-btn:hover { background: #2471a3; }
+        .save-confirmation {
+            display: none;
+            color: #27ae60;
+            font-size: 0.9em;
+            margin-top: 8px;
+        }
+        .no-candidates {
+            color: #999;
+            font-size: 0.9em;
+            padding: 8px 0;
+        }
     </style>
 </head>
 <body>
@@ -107,8 +167,18 @@
     <div id="summary">Loading...</div>
     <div id="issues-list"></div>
 
+    <div class="scanner-section">
+        <h2>🔍 Monitored Automations</h2>
+        <p style="font-size:0.9em; color:#666;">Select which automations Guardian should watch for missed executions.</p>
+        <div id="automation-list">Loading...</div>
+        <button class="save-btn" onclick="saveSelections()">Save</button>
+        <div class="save-confirmation" id="save-confirmation">✅ Saved!</div>
+    </div>
+
     <script>
         const dismissed = new Set();
+        let candidates = [];
+        let monitored = new Set();
 
         async function loadIssues() {
             const res = await fetch('/issues');
@@ -154,6 +224,55 @@
             });
         }
 
+        async function loadAutomations() {
+            const [candidatesRes, monitoredRes] = await Promise.all([
+                fetch('/ha/automations/candidates'),
+                fetch('/automations/monitored')
+            ]);
+            candidates = await candidatesRes.json();
+            const monitoredData = await monitoredRes.json();
+            monitored = new Set(monitoredData.monitored_automation_ids);
+
+            const list = document.getElementById('automation-list');
+
+            if (candidates.length === 0) {
+                list.innerHTML = '<div class="no-candidates">No time-based automations targeting lights or switches found.</div>';
+                return;
+            }
+
+            list.innerHTML = '';
+            candidates.forEach(auto => {
+                const div = document.createElement('div');
+                div.className = 'automation-item';
+                div.innerHTML = `
+                    <input type="checkbox" id="auto-${auto.id}" value="${auto.id}"
+                        ${monitored.has(auto.id) ? 'checked' : ''}>
+                    <div class="automation-info">
+                        <div class="automation-name">${auto.alias}</div>
+                        <div class="automation-meta">Triggers at ${auto.trigger_time} → ${auto.entity_id}</div>
+                    </div>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        async function saveSelections() {
+            const selected = candidates
+                .filter(a => document.getElementById(`auto-${a.id}`).checked)
+                .map(a => a.id);
+
+            await fetch('/automations/monitored', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ monitored_automation_ids: selected })
+            });
+
+            monitored = new Set(selected);
+            const confirmation = document.getElementById('save-confirmation');
+            confirmation.style.display = 'block';
+            setTimeout(() => confirmation.style.display = 'none', 3000);
+        }
+
         function toggleFix(id) {
             const section = document.getElementById(`fix-${id}`);
             section.classList.toggle('visible');
@@ -165,8 +284,7 @@
         }
 
         loadIssues();
+        loadAutomations();
     </script>
 </body>
 </html>
-
-
