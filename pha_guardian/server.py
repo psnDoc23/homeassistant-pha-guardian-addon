@@ -83,6 +83,14 @@ async def debug_all_automations():
     return full_configs
 
 
+
+@app.get("/ha/automations/candidates")
+async def automation_candidates():
+    from checkers.automation_scanner import scan_automations
+    return await scan_automations(supervisor)
+
+
+
 # ---------------------------
 # Health Endpoint 
 # ---------------------------
