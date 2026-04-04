@@ -127,18 +127,16 @@ async def issues():
     from checkers.disk_space import check_disk_space
     from checkers.usb_path import check_usb_path
     from checkers.missed_automation import check_missed_automations
+    from storage import load_monitored_ids
 
     all_issues = []
     all_issues += await check_disk_space(supervisor)
     all_issues += await check_usb_path(supervisor)
 
-    # Load automation IDs from environment
-    automation_ids_raw = os.environ.get("AUTOMATION_IDS", "")
-    automation_ids = [aid.strip() for aid in automation_ids_raw.split(",") if aid.strip()]
-
-    if automation_ids:
+    monitored_ids = load_monitored_ids()
+    if monitored_ids:
         automation_configs = []
-        for aid in automation_ids:
+        for aid in monitored_ids:
             try:
                 config = await supervisor._get_core(f"/config/automation/config/{aid}")
                 automation_configs.append(config)
@@ -147,6 +145,7 @@ async def issues():
         all_issues += await check_missed_automations(supervisor, automation_configs)
 
     return {"issues": all_issues}
+
 
 
 
