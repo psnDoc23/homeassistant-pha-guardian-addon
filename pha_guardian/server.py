@@ -1,6 +1,6 @@
 # server.py
 import os
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Body
 from fastapi.responses import JSONResponse
 
 from fastapi.responses import HTMLResponse
@@ -14,6 +14,7 @@ from logging_config import setup_logging
 from supervisor_client import SupervisorClient
 
 from analyzer import analyze_dropouts
+
 
 
 logger = setup_logging()
@@ -83,11 +84,27 @@ async def debug_all_automations():
     return full_configs
 
 
-
+# automation candidates
 @app.get("/ha/automations/candidates")
 async def automation_candidates():
     from checkers.automation_scanner import scan_automations
     return await scan_automations(supervisor)
+
+
+# more automations
+@app.get("/automations/monitored")
+async def get_monitored():
+    from storage import load_monitored_ids
+    return {"monitored_automation_ids": load_monitored_ids()}
+
+
+@app.post("/automations/monitored")
+async def set_monitored(payload: dict):
+    from storage import save_monitored_ids
+    ids = payload.get("monitored_automation_ids", [])
+    save_monitored_ids(ids)
+    return {"status": "ok", "monitored_automation_ids": ids}
+
 
 
 
