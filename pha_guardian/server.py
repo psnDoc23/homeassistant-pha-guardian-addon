@@ -64,11 +64,23 @@ async def debug_host_info():
 
 
 
+
 @app.get("/debug/all-automations")
 async def debug_all_automations():
     states = await supervisor._get_core("/states")
     automations = [s for s in states if s.get("entity_id", "").startswith("automation.")]
-    return automations
+    
+    full_configs = []
+    for auto in automations:
+        aid = auto.get("attributes", {}).get("id")
+        if aid:
+            try:
+                config = await supervisor._get_core(f"/config/automation/config/{aid}")
+                full_configs.append(config)
+            except Exception:
+                pass
+    
+    return full_configs
 
 
 # ---------------------------
