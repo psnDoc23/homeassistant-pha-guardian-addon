@@ -63,6 +63,12 @@ async def debug_host_info():
     return await supervisor._get("/host/info")
 
 
+
+@app.get("/debug/all-automations")
+async def debug_all_automations():
+    return await supervisor._get_core("/config/automation/config")
+
+
 # ---------------------------
 # Health Endpoint 
 # ---------------------------
@@ -102,7 +108,7 @@ async def issues():
         all_issues += await check_missed_automations(supervisor, automation_configs)
 
     return {"issues": all_issues}
-    
+
 
 
 
