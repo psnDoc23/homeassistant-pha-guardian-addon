@@ -20,6 +20,8 @@ async def check_missed_automations(supervisor, automation_configs: list) -> list
 
     return issues
 
+
+
 async def _check_single_automation(supervisor, config: dict):
     """
     Checks a single automation config for a miss.
@@ -51,8 +53,13 @@ async def _check_single_automation(supervisor, config: dict):
 
         # Check if automation is currently enabled
         try:
-            auto_state = await supervisor._get_core(f"/states/automation.{automation_id}")
-            automation_enabled = auto_state.get("state") == "on"
+            states = await supervisor._get_core("/states")
+            auto_state = next(
+                (s for s in states 
+                 if s.get("attributes", {}).get("id") == automation_id),
+                None
+            )
+            automation_enabled = auto_state.get("state") == "on" if auto_state else True
         except Exception:
             automation_enabled = True
 
