@@ -87,15 +87,28 @@ async def set_monitored(payload: dict):
     return {"status": "ok", "monitored_automation_ids": ids}
 
 
+
 @app.post("/ha/automations/{automation_id}/enable")
 async def enable_automation(automation_id: str):
     try:
+        # Look up the full entity_id from the automation ID
+        states = await supervisor._get_core("/states")
+        auto_state = next(
+            (s for s in states 
+             if s.get("attributes", {}).get("id") == automation_id),
+            None
+        )
+        if not auto_state:
+            return JSONResponse(status_code=404, content={"error": "Automation not found"})
+        
+        entity_id = auto_state.get("entity_id")
         await supervisor._post_core("/services/automation/turn_on", {
-            "entity_id": f"automation.{automation_id}"
+            "entity_id": entity_id
         })
         return {"status": "ok"}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
 
 
 # ---------------------------
