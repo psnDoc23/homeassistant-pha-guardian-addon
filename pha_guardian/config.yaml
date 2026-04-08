@@ -1,5 +1,5 @@
 name: "PHA Guardian"
-version: "0.0.133"
+version: "0.0.134"
 slug: "pha_guardian_dev"
 description: "Guardian API monitoring tool"
 # Use this for Supervisor access
@@ -32,3 +32,10 @@ schema:
   dev_mode: bool
   automation_ids:
     - str
+
+
+
+
+
+
+

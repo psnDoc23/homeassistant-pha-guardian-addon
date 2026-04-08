@@ -87,6 +87,15 @@ async def set_monitored(payload: dict):
     return {"status": "ok", "monitored_automation_ids": ids}
 
 
+@app.post("/ha/automations/{automation_id}/enable")
+async def enable_automation(automation_id: str):
+    try:
+        await supervisor._post_core("/services/automation/turn_on", {
+            "entity_id": f"automation.{automation_id}"
+        })
+        return {"status": "ok"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 # ---------------------------

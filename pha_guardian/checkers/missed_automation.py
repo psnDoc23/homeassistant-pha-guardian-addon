@@ -20,7 +20,6 @@ async def check_missed_automations(supervisor, automation_configs: list) -> list
 
     return issues
 
-
 async def _check_single_automation(supervisor, config: dict):
     """
     Checks a single automation config for a miss.
@@ -50,6 +49,13 @@ async def _check_single_automation(supervisor, config: dict):
         if now < trigger_dt + timedelta(minutes=MINUTES_GRACE_PERIOD):
             return None
 
+        # Check if automation is currently enabled
+        try:
+            auto_state = await supervisor._get_core(f"/states/automation.{automation_id}")
+            automation_enabled = auto_state.get("state") == "on"
+        except Exception:
+            automation_enabled = True
+
         # Get logbook for the entity around the trigger time
         entries = await supervisor.get_logbook(entity_id, hours=24)
 
@@ -65,13 +71,13 @@ async def _check_single_automation(supervisor, config: dict):
             state_data = await supervisor.get_state(entity_id)
             current_state = state_data.get("state")
             if current_state == "on":
-                return _make_issue(alias, entity_id, trigger_time_str)
+                return _make_issue(alias, entity_id, trigger_time_str, automation_id, automation_enabled)
             return None
 
         # Check the last state after the trigger time
         last_post = post_trigger[-1]
         if last_post.get("state") == "on":
-            return _make_issue(alias, entity_id, trigger_time_str)
+            return _make_issue(alias, entity_id, trigger_time_str, automation_id, automation_enabled)
 
         return None
 
@@ -82,6 +88,8 @@ async def _check_single_automation(supervisor, config: dict):
             "severity": "unknown",
             "detail": str(e)
         }
+
+
 
 
 def _get_trigger_time(config: dict):
@@ -115,7 +123,7 @@ def _build_trigger_dt(time_str: str):
     
 
 
-def _make_issue(alias: str, entity_id: str, trigger_time: str) -> dict:
+def _make_issue(alias: str, entity_id: str, trigger_time: str, automation_id: str, automation_enabled: bool) -> dict:
     return {
         "id": f"missed_automation_{entity_id}",
         "title": f"Missed automation: {alias}",
@@ -128,8 +136,11 @@ def _make_issue(alias: str, entity_id: str, trigger_time: str) -> dict:
             f"Check the automation trace in HA under Settings → Automations → "
             f"'{alias}' → Traces to see why it may have failed. Also check if "
             f"another automation or manual action is overriding it."
-        )
+        ),
+        "fixable": not automation_enabled,
+        "automation_id": automation_id,
     }
+
 
 
 def _parse(when: str) -> datetime:

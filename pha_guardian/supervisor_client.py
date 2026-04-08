@@ -77,5 +77,20 @@ class SupervisorClient:
         data = await self._get_core(f"/logbook/{start}?entity_id={entity_id}&minimal_response=false")
         return [entry for entry in data if entry.get("entity_id") == entity_id]
 
-    
+
+
+    async def _post_core(self, path: str, body: dict = {}):
+        token = self.token
+        if not token:
+            raise Exception("Authentication token missing")
+        
+        url = f"{self.base_url}/core/api{path}"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+        
+        response = await self.client.post(url, headers=headers, json=body)
+        response.raise_for_status()
+        return response.json()
 

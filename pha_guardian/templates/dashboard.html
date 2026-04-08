@@ -211,6 +211,7 @@
                         </div>
                         <div class="issue-actions">
                             ${issue.suggestion ? `<button class="fix-btn" onclick="toggleFix('${issue.id}')">How to fix</button>` : ''}
+                            ${issue.fixable ? `<button class="fix-btn" onclick="applyFix('${issue.automation_id}', '${issue.id}')">Apply Fix</button>` : ''}
                             <button class="dismiss-btn" onclick="dismiss('${issue.id}')">Dismiss</button>
                         </div>
                     </div>
@@ -221,7 +222,7 @@
                     </div>` : ''}
                 `;
                 list.appendChild(div);
-            });
+            });                                                 
         }
 
         async function loadAutomations() {
@@ -276,6 +277,24 @@
         function toggleFix(id) {
             const section = document.getElementById(`fix-${id}`);
             section.classList.toggle('visible');
+        }
+        
+        async function applyFix(automationId, issueId) {
+            if (!confirm('This will re-enable the automation. Continue?')) return;
+            
+            try {
+                const res = await fetch(`/ha/automations/${automationId}/enable`, {
+                    method: 'POST'
+                });
+                if (res.ok) {
+                    dismissed.add(issueId);
+                    loadIssues();
+                } else {
+                    alert('Fix failed. Please try manually.');
+                }
+            } catch (e) {
+                alert('Fix failed. Please try manually.');
+            }
         }
 
         function dismiss(id) {
