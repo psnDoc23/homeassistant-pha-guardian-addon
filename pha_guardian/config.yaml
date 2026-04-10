@@ -1,5 +1,5 @@
 name: "PHA Guardian"
-version: "0.0.136"
+version: "0.0.137"
 slug: "pha_guardian_dev"
 description: "Guardian API monitoring tool"
 # Use this for Supervisor access
@@ -16,6 +16,10 @@ boot: auto
 host_network: false
 # Ensure the container knows it's an S6-overlay app
 init: false
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:shield-home
+panel_title: PHA Guardian
 ports:
   8099/tcp: 8099
 ports_description:
