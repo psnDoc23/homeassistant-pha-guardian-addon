@@ -84,6 +84,18 @@ else:
     logger.info("Production mode — using real Supervisor")
 
 
+
+
+
+@app.get("/debug/ingress")
+async def debug_ingress(request: Request):
+    return {
+        "x_ingress_path": request.headers.get("x-ingress-path", "NOT FOUND"),
+        "headers": dict(request.headers)
+    }
+
+
+
 # ---------------------------
 # Dashboard Endpoint 
 # ---------------------------
