@@ -15,13 +15,59 @@ from supervisor_client import SupervisorClient
 
 from analyzer import analyze_dropouts
 
+from contextlib import asynccontextmanager
+import asyncio
+
+
+
 
 
 logger = setup_logging()
 
-app = FastAPI()
 
 supervisor = SupervisorClient()
+
+
+async def background_polling():
+    while True:
+        await asyncio.sleep(30)  # every 5 minutes
+        try:
+            from checkers.disk_space import check_disk_space
+            from checkers.usb_path import check_usb_path
+            from checkers.missed_automation import check_missed_automations
+            from storage import load_monitored_ids
+
+            all_issues = []
+            all_issues += await check_disk_space(supervisor)
+            all_issues += await check_usb_path(supervisor)
+
+            monitored_ids = load_monitored_ids()
+            if monitored_ids:
+                automation_configs = []
+                for aid in monitored_ids:
+                    try:
+                        config = await supervisor._get_core(f"/config/automation/config/{aid}")
+                        automation_configs.append(config)
+                    except Exception:
+                        pass
+                all_issues += await check_missed_automations(supervisor, automation_configs)
+
+            if all_issues:
+                logger.info(f"Background poll found {len(all_issues)} issue(s)")
+            else:
+                logger.info("Background poll: no issues found")
+
+        except Exception as e:
+            logger.error(f"Background poll error: {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    asyncio.create_task(background_polling())
+    yield
+
+app = FastAPI(lifespan=lifespan)
+
 
 
 # determine whether in dev mode or not
