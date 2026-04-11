@@ -30,7 +30,7 @@ supervisor = SupervisorClient()
 
 async def background_polling():
     while True:
-        await asyncio.sleep(30)  # every 5 minutes
+        await asyncio.sleep(300)  # every 5 minutes
         try:
             from checkers.disk_space import check_disk_space
             from checkers.usb_path import check_usb_path
