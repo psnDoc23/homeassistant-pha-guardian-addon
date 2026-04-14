@@ -85,8 +85,6 @@ else:
 
 
 
-
-
 @app.get("/debug/ingress")
 async def debug_ingress(request: Request):
     return {
@@ -101,7 +99,8 @@ async def debug_ingress(request: Request):
 # ---------------------------
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    return templates.TemplateResponse(request, "dashboard.html")
+    ingress_path = request.headers.get("x-ingress-path", "")
+    return templates.TemplateResponse(request, "dashboard.html", {"ingress_path": ingress_path})
 
 
 # ---------------------------
