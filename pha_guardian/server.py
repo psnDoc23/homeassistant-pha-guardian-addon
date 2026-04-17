@@ -25,6 +25,26 @@ import asyncio
 logger = setup_logging()
 
 
+# --- Token auth middleware --- https://claude.ai/chat/6b3db029-b5d8-4150-a0e9-e5820eed706c
+API_TOKEN = os.environ.get("API_TOKEN", "")
+
+async def verify_token(request: Request, call_next):
+    # Always allow the dashboard and health check through
+    if request.url.path in ("/", "/health"):
+        return await call_next(request)
+
+    if not API_TOKEN:
+        # Token not configured — pass through (local-only mode)
+        return await call_next(request)
+
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer ") or auth[len("Bearer "):] != API_TOKEN:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=401, content={"error": "Unauthorized"})
+
+    return await call_next(request)
+
+
 supervisor = SupervisorClient()
 
 
@@ -67,6 +87,11 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(lifespan=lifespan)
+
+
+# https://claude.ai/chat/6b3db029-b5d8-4150-a0e9-e5820eed706c
+from starlette.middleware.base import BaseHTTPMiddleware
+app.add_middleware(BaseHTTPMiddleware, dispatch=verify_token)
 
 
 

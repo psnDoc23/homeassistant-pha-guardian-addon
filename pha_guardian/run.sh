@@ -15,6 +15,11 @@ if bashio::config.has_value 'automation_ids'; then
     export AUTOMATION_IDS=$(bashio::config 'automation_ids' | tr '\n' ',' | sed 's/,$//')
 fi
 
+# Add this after the automation_ids block, before the exec line:
+if bashio::config.has_value 'api_token'; then
+    export API_TOKEN=$(bashio::config 'api_token')
+fi
+
 exec python3 /app/server.py
 
 
