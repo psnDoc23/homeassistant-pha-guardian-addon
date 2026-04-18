@@ -125,7 +125,10 @@ async def debug_ingress(request: Request):
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     ingress_path = request.headers.get("x-ingress-path", "")
-    return templates.TemplateResponse(request, "dashboard.html", {"ingress_path": ingress_path})
+    return templates.TemplateResponse(request, "dashboard.html", {
+        "ingress_path": ingress_path,
+        "api_token": API_TOKEN
+    })
 
 
 # ---------------------------

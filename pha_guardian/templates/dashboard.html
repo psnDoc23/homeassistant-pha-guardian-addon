@@ -177,12 +177,15 @@
 
     <script>
         const BASE_PATH = "{{ ingress_path }}";
+        const API_TOKEN = "{{ api_token }}";
         const dismissed = new Set();
         let candidates = [];
         let monitored = new Set();
 
         async function loadIssues() {
-            const res = await fetch(BASE_PATH + '/issues');
+            const res = await fetch(BASE_PATH + '/issues', {
+                headers: { "Authorization": `Bearer ${API_TOKEN}` }
+            });
             const data = await res.json();
             const issues = data.issues.filter(i => !dismissed.has(i.id));
 
@@ -228,8 +231,12 @@
 
         async function loadAutomations() {
             const [candidatesRes, monitoredRes] = await Promise.all([
-                fetch(BASE_PATH + '/ha/automations/candidates'),
-                fetch(BASE_PATH + '/automations/monitored')
+                fetch(BASE_PATH + '/ha/automations/candidates', {
+                    headers: { "Authorization": `Bearer ${API_TOKEN}` }
+                }),
+                fetch(BASE_PATH + '/automations/monitored', {
+                    headers: { "Authorization": `Bearer ${API_TOKEN}` }
+                })
             ]);
             candidates = await candidatesRes.json();
             const monitoredData = await monitoredRes.json();
@@ -265,7 +272,10 @@
 
             await fetch(BASE_PATH + '/automations/monitored', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    "Authorization": `Bearer ${API_TOKEN}`
+                },
                 body: JSON.stringify({ monitored_automation_ids: selected })
             });
 
@@ -285,7 +295,8 @@
             
             try {
                 const res = await fetch(BASE_PATH + `/ha/automations/${automationId}/enable`, {
-                    method: 'POST'
+                    method: 'POST',
+                    headers: { "Authorization": `Bearer ${API_TOKEN}` }
                 });
                 if (res.ok) {
                     dismissed.add(issueId);
