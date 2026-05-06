@@ -48,6 +48,28 @@ async def verify_token(request: Request, call_next):
 supervisor = SupervisorClient()
 
 
+PROPHETDATA_PUSH_URL = os.environ.get(
+    "PROPHETDATA_PUSH_URL",
+    "https://prophetdata.net/connect/guardian/push/"
+)
+
+async def push_to_prophetdata(issues: list):
+    if not API_TOKEN:
+        logger.info("Push skipped — no API token configured")
+        return
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                PROPHETDATA_PUSH_URL,
+                json={"issues": issues},
+                headers={"Authorization": f"Bearer {API_TOKEN}"}
+            )
+            logger.info(f"Push to prophetdata.net: {response.status_code}")
+    except Exception as e:
+        logger.error(f"Push to prophetdata.net failed: {e}")
+
+
+        
 async def background_polling():
     while True:
         await asyncio.sleep(300)  # every 5 minutes
@@ -76,6 +98,10 @@ async def background_polling():
                 logger.info(f"Background poll found {len(all_issues)} issue(s)")
             else:
                 logger.info("Background poll: no issues found")
+
+            # --- Push results to prophetdata.net ---
+            await push_to_prophetdata(all_issues)
+
 
         except Exception as e:
             logger.error(f"Background poll error: {e}")
