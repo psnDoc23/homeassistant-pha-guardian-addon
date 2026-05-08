@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 
 templates = Jinja2Templates(directory="/app/templates")
 
+import httpx
 
 
 from logging_config import setup_logging
@@ -69,7 +70,7 @@ async def push_to_prophetdata(issues: list):
         logger.error(f"Push to prophetdata.net failed: {e}")
 
 
-        
+
 async def background_polling():
     while True:
         await asyncio.sleep(300)  # every 5 minutes
