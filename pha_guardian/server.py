@@ -70,42 +70,48 @@ async def push_to_prophetdata(issues: list):
         logger.error(f"Push to prophetdata.net failed: {e}")
 
 
+async def run_checks() -> list:
+    """Run all checkers and return issues. Used by both background polling and on-demand trigger."""
+    from checkers.disk_space import check_disk_space
+    from checkers.usb_path import check_usb_path
+    from checkers.missed_automation import check_missed_automations
+    from storage import load_monitored_ids
+
+    all_issues = []
+    all_issues += await check_disk_space(supervisor)
+    all_issues += await check_usb_path(supervisor)
+
+    monitored_ids = load_monitored_ids()
+    if monitored_ids:
+        automation_configs = []
+        for aid in monitored_ids:
+            try:
+                config = await supervisor._get_core(f"/config/automation/config/{aid}")
+                automation_configs.append(config)
+            except Exception:
+                pass
+        all_issues += await check_missed_automations(supervisor, automation_configs)
+
+    return all_issues
+
+
 
 async def background_polling():
     while True:
-        await asyncio.sleep(300)  # every 5 minutes
+        await asyncio.sleep(300)
         try:
-            from checkers.disk_space import check_disk_space
-            from checkers.usb_path import check_usb_path
-            from checkers.missed_automation import check_missed_automations
-            from storage import load_monitored_ids
-
-            all_issues = []
-            all_issues += await check_disk_space(supervisor)
-            all_issues += await check_usb_path(supervisor)
-
-            monitored_ids = load_monitored_ids()
-            if monitored_ids:
-                automation_configs = []
-                for aid in monitored_ids:
-                    try:
-                        config = await supervisor._get_core(f"/config/automation/config/{aid}")
-                        automation_configs.append(config)
-                    except Exception:
-                        pass
-                all_issues += await check_missed_automations(supervisor, automation_configs)
+            all_issues = await run_checks()
 
             if all_issues:
                 logger.info(f"Background poll found {len(all_issues)} issue(s)")
             else:
                 logger.info("Background poll: no issues found")
 
-            # --- Push results to prophetdata.net ---
             await push_to_prophetdata(all_issues)
-
 
         except Exception as e:
             logger.error(f"Background poll error: {e}")
+
 
 
 @asynccontextmanager
@@ -145,7 +151,28 @@ async def debug_ingress(request: Request):
     }
 
 
+# ---------------------------
+# On-Demand Trigger Endpoint
+# ---------------------------
+@app.post("/trigger")
+async def trigger_check():
+    """
+    Called by HA webhook automation to trigger an immediate check and push.
+    This is the demand side of the PULL flow:
+    prophetdata.net → HA webhook → this endpoint → push back to prophetdata.net
+    """
+    logger.info("On-demand trigger received — running checks now")
+    try:
+        all_issues = await run_checks()
+        await push_to_prophetdata(all_issues)
+        logger.info(f"On-demand trigger complete — {len(all_issues)} issue(s) pushed")
+        return {"status": "ok", "issues_found": len(all_issues)}
+    except Exception as e:
+        logger.error(f"Trigger error: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+    
 
+    
 # ---------------------------
 # Dashboard Endpoint 
 # ---------------------------
