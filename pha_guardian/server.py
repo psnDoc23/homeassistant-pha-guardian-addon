@@ -31,7 +31,7 @@ API_TOKEN = os.environ.get("API_TOKEN", "")
 
 async def verify_token(request: Request, call_next):
     # Always allow the dashboard and health check through
-    if request.url.path in ("/", "/health"):
+    if request.url.path in ("/", "/health", "/trigger"):
         return await call_next(request)
 
     if not API_TOKEN:
