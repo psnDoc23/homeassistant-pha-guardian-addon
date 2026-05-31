@@ -19,7 +19,7 @@ from analyzer import analyze_dropouts
 from contextlib import asynccontextmanager
 import asyncio
 
-
+from checkers.device_dropouts import check_device_dropouts
 
 
 
@@ -82,6 +82,9 @@ async def run_checks() -> list:
     all_issues = []
     all_issues += await check_disk_space(supervisor)
     all_issues += await check_usb_path(supervisor)
+    all_issues += await check_device_dropouts(supervisor)
+
+    
 
     monitored_ids = load_monitored_ids()
     if monitored_ids:
