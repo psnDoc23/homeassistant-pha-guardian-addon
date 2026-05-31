@@ -39,7 +39,7 @@ async def verify_token(request: Request, call_next):
         return await call_next(request)
 
     auth = request.headers.get("Authorization", "")
-    logger.info(f"Auth header received: '{auth}'")
+    # logger.info(f"Auth header received: '{auth}'")  # debug ONLY - don't be dropping tokens in logs 
     if not auth.startswith("Bearer ") or auth[len("Bearer "):] != API_TOKEN:
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=401, content={"error": "Unauthorized"})
