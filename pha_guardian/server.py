@@ -100,22 +100,8 @@ async def run_checks() -> list:
         all_issues += await check_missed_automations(supervisor, automation_configs)
 
     return all_issues
-
-
-@app.get("/debug/history/{entity_id}")
-async def debug_history(entity_id: str):
-    try:
-        entries = await supervisor.get_history(entity_id, hours=24)
-        states = [e.get("state") for e in entries]
-        return {
-            "entity_id": entity_id,
-            "total_entries": len(entries),
-            "states_found": states
-        }
-    except Exception as e:
-        return {"error": str(e)}
     
-    
+
 
 async def background_polling():
     while True:
@@ -171,6 +157,21 @@ async def debug_ingress(request: Request):
         "headers": dict(request.headers)
     }
 
+
+@app.get("/debug/history/{entity_id}")
+async def debug_history(entity_id: str):
+    try:
+        entries = await supervisor.get_history(entity_id, hours=24)
+        states = [e.get("state") for e in entries]
+        return {
+            "entity_id": entity_id,
+            "total_entries": len(entries),
+            "states_found": states
+        }
+    except Exception as e:
+        return {"error": str(e)}
+    
+    
 
 # ---------------------------
 # On-Demand Trigger Endpoint
