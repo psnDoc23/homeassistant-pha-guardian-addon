@@ -79,6 +79,23 @@ class SupervisorClient:
 
 
 
+    async def get_history(self, entity_id: str, hours: int = 24):
+        from datetime import datetime, timezone, timedelta
+        start = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        data = await self._get_core(f"/history/period/{start}?filter_entity_id={entity_id}&minimal_response=true&no_attributes=true")
+        # History returns a list of lists — one list per entity
+        if not data or not isinstance(data, list):
+            return []
+        # Flatten and filter to this entity only
+        entries = []
+        for entity_history in data:
+            for entry in entity_history:
+                if entry.get("entity_id") == entity_id:
+                    entries.append(entry)
+        return entries
+
+
+
     async def _post_core(self, path: str, body: dict = {}):
         token = self.token
         if not token:

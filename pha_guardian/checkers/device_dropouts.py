@@ -34,7 +34,7 @@ async def check_device_dropouts(supervisor) -> list:
     for state in candidates:
         entity_id = state.get("entity_id")
         try:
-            entries = await supervisor.get_logbook(entity_id, hours=HOURS_TO_CHECK)
+            entries = await supervisor.get_history(entity_id, hours=HOURS_TO_CHECK)
 
             # Filter to this entity only (logbook API filter is unreliable)
             entries = [e for e in entries if e.get("entity_id") == entity_id]
