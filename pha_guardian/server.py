@@ -171,7 +171,21 @@ async def debug_history(entity_id: str):
     except Exception as e:
         return {"error": str(e)}
     
+
     
+@app.get("/debug/raw-history/{entity_id}")
+async def debug_raw_history(entity_id: str):
+    try:
+        from datetime import datetime, timezone, timedelta
+        start = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        data = await supervisor._get_core(
+            f"/history/period/{start}?filter_entity_id={entity_id}"
+        )
+        return {"raw": data}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 
 # ---------------------------
 # On-Demand Trigger Endpoint
