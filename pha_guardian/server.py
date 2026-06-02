@@ -69,9 +69,11 @@ async def push_to_prophetdata(issues: list):
                 json={"issues": issues},
                 headers={"Authorization": f"Bearer {API_TOKEN}"}
             )
-            logger.info(f"Push to prophetdata.net: {response.status_code}")
+            logger.info(f"Push to prophetdata.net: status={response.status_code} body={response.text[:200]}")
     except Exception as e:
-        logger.error(f"Push to prophetdata.net failed: {e}")
+        logger.error(f"Push to prophetdata.net failed: {type(e).__name__}: {repr(e)}")
+
+        
 
 
 async def run_checks() -> list:
