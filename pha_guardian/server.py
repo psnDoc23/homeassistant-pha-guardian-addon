@@ -295,8 +295,9 @@ async def health():
     return {"status": "ok"}
 
 
+
 # ---------------------------
-# Issues Endpoint
+# Issues Endpoint 
 # ---------------------------
 @app.get("/issues")
 async def issues():
@@ -305,11 +306,13 @@ async def issues():
     from checkers.disk_space import check_disk_space
     from checkers.usb_path import check_usb_path
     from checkers.missed_automation import check_missed_automations
+    from checkers.device_dropouts import check_device_dropouts
     from storage import load_monitored_ids
 
     all_issues = []
     all_issues += await check_disk_space(supervisor)
     all_issues += await check_usb_path(supervisor)
+    all_issues += await check_device_dropouts(supervisor)
 
     monitored_ids = load_monitored_ids()
     if monitored_ids:
@@ -323,8 +326,6 @@ async def issues():
         all_issues += await check_missed_automations(supervisor, automation_configs)
 
     return {"issues": all_issues}
-
-
 
 
 

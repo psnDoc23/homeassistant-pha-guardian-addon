@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-DROPOUT_THRESHOLD = 0  # minimum dropouts in window to raise an issue
+DROPOUT_THRESHOLD = 2  # minimum dropouts in window to raise an issue
 HOURS_TO_CHECK = 48
 PHYSICAL_DOMAINS = ["light", "switch", "binary_sensor", "sensor"]
 
