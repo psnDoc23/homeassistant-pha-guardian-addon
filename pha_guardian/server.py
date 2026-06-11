@@ -80,6 +80,8 @@ async def run_checks() -> list:
     """Run all checkers and return issues. Used by both background polling and on-demand trigger."""
     from checkers.disk_space import check_disk_space
     from checkers.usb_path import check_usb_path
+    from checkers.device_dropouts import check_device_dropouts
+    from checkers.correlated_dropouts import check_correlated_dropouts
     from checkers.missed_automation import check_missed_automations
     from storage import load_monitored_ids
 
@@ -87,8 +89,7 @@ async def run_checks() -> list:
     all_issues += await check_disk_space(supervisor)
     all_issues += await check_usb_path(supervisor)
     all_issues += await check_device_dropouts(supervisor)
-
-    
+    all_issues += await check_correlated_dropouts(supervisor)
 
     monitored_ids = load_monitored_ids()
     if monitored_ids:
@@ -102,6 +103,7 @@ async def run_checks() -> list:
         all_issues += await check_missed_automations(supervisor, automation_configs)
 
     return all_issues
+
     
 
 
@@ -309,12 +311,15 @@ async def issues():
     from checkers.usb_path import check_usb_path
     from checkers.missed_automation import check_missed_automations
     from checkers.device_dropouts import check_device_dropouts
+    from checkers.correlated_dropouts import check_correlated_dropouts
     from storage import load_monitored_ids
 
     all_issues = []
     all_issues += await check_disk_space(supervisor)
     all_issues += await check_usb_path(supervisor)
     all_issues += await check_device_dropouts(supervisor)
+    all_issues += await check_correlated_dropouts(supervisor)
+    
 
     monitored_ids = load_monitored_ids()
     if monitored_ids:
