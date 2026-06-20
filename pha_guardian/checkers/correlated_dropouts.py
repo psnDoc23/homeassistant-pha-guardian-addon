@@ -82,6 +82,7 @@ async def check_correlated_dropouts(supervisor) -> list:
                     "around this time."
                 ),
                 "fixable": False,
+                "involved_entities": sorted(distinct_entities), 
             })
 
     return issues
