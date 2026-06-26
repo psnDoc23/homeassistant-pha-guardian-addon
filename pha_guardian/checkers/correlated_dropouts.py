@@ -3,7 +3,7 @@
 from datetime import datetime
 
 HOURS_TO_CHECK = 48
-WINDOW_MINUTES = 5          # devices dropping within this window are "correlated"
+WINDOW_MINUTES = 3          # devices dropping within this window are "correlated"
 MIN_DEVICES_IN_WINDOW = 3   # need at least this many to flag a correlated event
 PHYSICAL_DOMAINS = ["light", "switch", "binary_sensor", "sensor"]
 
