@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PHA Guardian</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 20px;
+            background: #f5f5f5;
+            color: #333;
+        }
+        h1 { color: #1a1a2e; }
+        h2 { color: #1a1a2e; font-size: 1.1em; margin-top: 32px; }
+        #summary {
+            background: white;
+            border-radius: 8px;
+            padding: 16px 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+            font-size: 1.1em;
+        }
+        .issue {
+            background: white;
+            border-left: 5px solid #ccc;
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+        }
+        .issue.high  { border-left-color: #e74c3c; }
+        .issue.medium { border-left-color: #f39c12; }
+        .issue.low   { border-left-color: #3498db; }
+        .issue.unknown { border-left-color: #95a5a6; }
+        .issue-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .issue-title { font-weight: bold; margin-bottom: 6px; }
+        .issue-detail { font-size: 0.9em; color: #666; }
+        .issue-severity {
+            font-size: 0.75em;
+            text-transform: uppercase;
+            font-weight: bold;
+            color: #999;
+            margin-top: 4px;
+        }
+        .issue-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .dismiss-btn {
+            background: none;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 4px 10px;
+            cursor: pointer;
+            font-size: 0.85em;
+            color: #999;
+            white-space: nowrap;
+        }
+        .dismiss-btn:hover { background: #f0f0f0; }
+        .fix-btn {
+            background: none;
+            border: 1px solid #3498db;
+            border-radius: 4px;
+            padding: 4px 10px;
+            cursor: pointer;
+            font-size: 0.85em;
+            color: #3498db;
+            white-space: nowrap;
+        }
+        .fix-btn:hover { background: #eaf4fb; }
+        .fix-section {
+            display: none;
+            margin-top: 12px;
+            padding: 12px;
+            background: #f0f7ff;
+            border-radius: 6px;
+            font-size: 0.9em;
+            color: #2c3e50;
+            border-left: 3px solid #3498db;
+        }
+        .fix-section.visible { display: block; }
+        .fix-label {
+            font-weight: bold;
+            margin-bottom: 4px;
+            color: #2980b9;
+        }
+        #no-issues {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            text-align: center;
+            color: #27ae60;
+            font-size: 1.1em;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+        }
+        .scanner-section {
+            background: white;
+            border-radius: 8px;
+            padding: 16px 24px;
+            margin-top: 32px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+        }
+        .scanner-section h2 {
+            margin-top: 0;
+        }
+        .automation-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f0f0;
+            gap: 12px;
+        }
+        .automation-item:last-of-type {
+            border-bottom: none;
+        }
+        .automation-item input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        .automation-info {
+            flex: 1;
+        }
+        .automation-name {
+            font-weight: bold;
+            font-size: 0.95em;
+        }
+        .automation-meta {
+            font-size: 0.8em;
+            color: #999;
+            margin-top: 2px;
+        }
+        .save-btn {
+            background: #2980b9;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 20px;
+            cursor: pointer;
+            font-size: 0.9em;
+            margin-top: 16px;
+        }
+        .save-btn:hover { background: #2471a3; }
+        .save-confirmation {
+            display: none;
+            color: #27ae60;
+            font-size: 0.9em;
+            margin-top: 8px;
+        }
+        .no-candidates {
+            color: #999;
+            font-size: 0.9em;
+            padding: 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🛡️ PHA Guardian</h1>
+    <div id="summary">Loading...</div>
+    <div id="issues-list"></div>
+
+    <div class="scanner-section">
+        <h2>🔍 Monitored Automations</h2>
+        <p style="font-size:0.9em; color:#666;">Select which automations Guardian should watch for missed executions.</p>
+        <div id="automation-list">Loading...</div>
+        <button class="save-btn" onclick="saveSelections()">Save</button>
+        <div class="save-confirmation" id="save-confirmation">✅ Saved!</div>
+    </div>
+
+    <script>
+        const BASE_PATH = "{{ ingress_path }}";
+        const API_TOKEN = "{{ api_token }}";
+        const dismissed = new Set();
+        let candidates = [];
+        let monitored = new Set();
+
+        async function loadIssues() {
+            const res = await fetch(BASE_PATH + '/issues', {
+                headers: { "Authorization": `Bearer ${API_TOKEN}` }
+            });
+            const data = await res.json();
+            const issues = data.issues.filter(i => !dismissed.has(i.id));
+
+            const summary = document.getElementById('summary');
+            const list = document.getElementById('issues-list');
+
+            summary.textContent = issues.length === 0
+                ? '✅ No issues detected'
+                : `⚠️ ${issues.length} issue${issues.length > 1 ? 's' : ''} detected`;
+
+            list.innerHTML = '';
+
+            if (issues.length === 0) {
+                list.innerHTML = '<div id="no-issues">Your system looks healthy.</div>';
+                return;
+            }
+
+            issues.forEach(issue => {
+                const div = document.createElement('div');
+                div.className = `issue ${issue.severity}`;
+                div.innerHTML = `
+                    <div class="issue-header">
+                        <div>
+                            <div class="issue-title">${issue.title}</div>
+                            <div class="issue-detail">${issue.detail || ''}</div>
+                            <div class="issue-severity">${issue.severity}</div>
+                        </div>
+                        <div class="issue-actions">
+                            ${issue.suggestion ? `<button class="fix-btn" onclick="toggleFix('${issue.id}')">How to fix</button>` : ''}
+                            ${issue.fixable ? `<button class="fix-btn" onclick="applyFix('${issue.automation_id}', '${issue.id}')">Apply Fix</button>` : ''}
+                            <button class="dismiss-btn" onclick="dismiss('${issue.id}')">Dismiss</button>
+                        </div>
+                    </div>
+                    ${issue.suggestion ? `
+                    <div class="fix-section" id="fix-${issue.id}">
+                        <div class="fix-label">💡 Suggested fix</div>
+                        <div>${issue.suggestion}</div>
+                    </div>` : ''}
+                `;
+                list.appendChild(div);
+            });                                                 
+        }
+
+        async function loadAutomations() {
+            const [candidatesRes, monitoredRes] = await Promise.all([
+                fetch(BASE_PATH + '/ha/automations/candidates', {
+                    headers: { "Authorization": `Bearer ${API_TOKEN}` }
+                }),
+                fetch(BASE_PATH + '/automations/monitored', {
+                    headers: { "Authorization": `Bearer ${API_TOKEN}` }
+                })
+            ]);
+            candidates = await candidatesRes.json();
+            const monitoredData = await monitoredRes.json();
+            monitored = new Set(monitoredData.monitored_automation_ids);
+
+            const list = document.getElementById('automation-list');
+
+            if (candidates.length === 0) {
+                list.innerHTML = '<div class="no-candidates">No time-based automations targeting lights or switches found.</div>';
+                return;
+            }
+
+            list.innerHTML = '';
+            candidates.forEach(auto => {
+                const div = document.createElement('div');
+                div.className = 'automation-item';
+                div.innerHTML = `
+                    <input type="checkbox" id="auto-${auto.id}" value="${auto.id}"
+                        ${monitored.has(auto.id) ? 'checked' : ''}>
+                    <div class="automation-info">
+                        <div class="automation-name">${auto.alias}</div>
+                        <div class="automation-meta">Triggers at ${auto.trigger_time} → ${auto.entity_id}</div>
+                    </div>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        async function saveSelections() {
+            const selected = candidates
+                .filter(a => document.getElementById(`auto-${a.id}`).checked)
+                .map(a => a.id);
+
+            await fetch(BASE_PATH + '/automations/monitored', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    "Authorization": `Bearer ${API_TOKEN}`
+                },
+                body: JSON.stringify({ monitored_automation_ids: selected })
+            });
+
+            monitored = new Set(selected);
+            const confirmation = document.getElementById('save-confirmation');
+            confirmation.style.display = 'block';
+            setTimeout(() => confirmation.style.display = 'none', 3000);
+        }
+
+        function toggleFix(id) {
+            const section = document.getElementById(`fix-${id}`);
+            section.classList.toggle('visible');
+        }
+        
+        async function applyFix(automationId, issueId) {
+            if (!confirm('This will re-enable the automation. Continue?')) return;
+            
+            try {
+                const res = await fetch(BASE_PATH + `/ha/automations/${automationId}/enable`, {
+                    method: 'POST',
+                    headers: { "Authorization": `Bearer ${API_TOKEN}` }
+                });
+                if (res.ok) {
+                    dismissed.add(issueId);
+                    loadIssues();
+                } else {
+                    alert('Fix failed. Please try manually.');
+                }
+            } catch (e) {
+                alert('Fix failed. Please try manually.');
+            }
+        }
+
+        function dismiss(id) {
+            dismissed.add(id);
+            loadIssues();
+        }
+
+        loadIssues();
+        loadAutomations();
+    </script>
+</body>
+</html>
