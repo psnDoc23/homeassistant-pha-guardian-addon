@@ -20,13 +20,14 @@ from contextlib import asynccontextmanager
 import asyncio
 
 from checkers.device_dropouts import check_device_dropouts
+from checkers.device_classifier import classify_devices
 
 
 
 logger = setup_logging()
 
 
-# --- Token auth middleware --- https://claude.ai/chat/6b3db029-b5d8-4150-a0e9-e5820eed706c
+# --- Token auth middleware ---
 API_TOKEN = os.environ.get("API_TOKEN", "")
 
 async def verify_token(request: Request, call_next):
@@ -35,11 +36,10 @@ async def verify_token(request: Request, call_next):
         return await call_next(request)
 
     if not API_TOKEN:
-        # Token not configured — pass through (local-only mode)
+        # Token not configured -- pass through (local-only mode)
         return await call_next(request)
 
     auth = request.headers.get("Authorization", "")
-    # logger.info(f"Auth header received: '{auth}'")  # debug ONLY - don't be dropping tokens in logs 
     if not auth.startswith("Bearer ") or auth[len("Bearer "):] != API_TOKEN:
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=401, content={"error": "Unauthorized"})
@@ -58,22 +58,25 @@ PROPHETDATA_PUSH_URL = os.environ.get(
 
 
 
-async def push_to_prophetdata(issues: list):
+async def push_to_prophetdata(issues: list, device_registry: dict = None):
     if not API_TOKEN:
-        logger.info("Push skipped — no API token configured")
+        logger.info("Push skipped -- no API token configured")
         return
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        payload = {"issues": issues}
+        if device_registry:
+            payload["device_registry"] = device_registry
+        async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.post(
                 PROPHETDATA_PUSH_URL,
-                json={"issues": issues},
+                json=payload,
                 headers={"Authorization": f"Bearer {API_TOKEN}"}
             )
             logger.info(f"Push to prophetdata.net: status={response.status_code} body={response.text[:200]}")
     except Exception as e:
         logger.error(f"Push to prophetdata.net failed: {type(e).__name__}: {repr(e)}")
 
-        
+
 
 
 async def run_checks() -> list:
@@ -104,7 +107,7 @@ async def run_checks() -> list:
 
     return all_issues
 
-    
+
 
 
 async def background_polling():
@@ -118,7 +121,14 @@ async def background_polling():
             else:
                 logger.info("Background poll: no issues found")
 
-            await push_to_prophetdata(all_issues)
+            # Classify all devices and include in push payload
+            try:
+                device_registry = await classify_devices(supervisor)
+            except Exception as e:
+                logger.warning(f"Device classification failed, pushing without registry: {e}")
+                device_registry = None
+
+            await push_to_prophetdata(all_issues, device_registry)
 
         except Exception as e:
             logger.error(f"Background poll error: {e}")
@@ -133,7 +143,6 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
-# https://claude.ai/chat/6b3db029-b5d8-4150-a0e9-e5820eed706c
 from starlette.middleware.base import BaseHTTPMiddleware
 app.add_middleware(BaseHTTPMiddleware, dispatch=verify_token)
 
@@ -148,9 +157,9 @@ logger.info(f"DEV_MODE: {DEV_MODE}")
 if DEV_MODE:
     from mock_supervisor import router as mock_supervisor_router
     app.include_router(mock_supervisor_router)
-    logger.info("DEV_MODE enabled — mock supervisor routes loaded")
+    logger.info("DEV_MODE enabled -- mock supervisor routes loaded")
 else:
-    logger.info("Production mode — using real Supervisor")
+    logger.info("Production mode -- using real Supervisor")
 
 
 
@@ -199,13 +208,20 @@ async def trigger_check():
     """
     Called by HA webhook automation to trigger an immediate check and push.
     This is the demand side of the PULL flow:
-    prophetdata.net → HA webhook → this endpoint → push back to prophetdata.net
+    prophetdata.net -> HA webhook -> this endpoint -> push back to prophetdata.net
     """
-    logger.info("On-demand trigger received — running checks now")
+    logger.info("On-demand trigger received -- running checks now")
     try:
         all_issues = await run_checks()
-        await push_to_prophetdata(all_issues)
-        logger.info(f"On-demand trigger complete — {len(all_issues)} issue(s) pushed")
+
+        try:
+            device_registry = await classify_devices(supervisor)
+        except Exception as e:
+            logger.warning(f"Device classification failed on trigger: {e}")
+            device_registry = None
+
+        await push_to_prophetdata(all_issues, device_registry)
+        logger.info(f"On-demand trigger complete -- {len(all_issues)} issue(s) pushed")
         return {"status": "ok", "issues_found": len(all_issues)}
     except Exception as e:
         logger.error(f"Trigger error: {e}")
@@ -237,7 +253,6 @@ async def debug_env():
     }
 
 
-# https://claude.ai/chat/c79fd47a-db84-47cc-a903-1bebebaa38e9
 @app.get("/debug/host-info")
 async def debug_host_info():
     return await supervisor._get("/host/info")
