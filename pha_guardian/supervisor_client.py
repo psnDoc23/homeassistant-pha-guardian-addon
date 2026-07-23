@@ -99,6 +99,14 @@ class SupervisorClient:
         return entries
 
 
+    async def get_entity_registry(self) -> list:
+        """Return all entity registry entries from HA core."""
+        return await self._get_core("/config/entity_registry/list")
+
+    async def get_manifest(self, domain: str) -> dict:
+        """Return the integration manifest for a given domain."""
+        return await self._get_core(f"/manifests/{domain}")
+
     async def _post_core(self, path: str, body: dict = {}):
         token = self.token
         if not token:
