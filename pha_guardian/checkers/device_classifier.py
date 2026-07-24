@@ -108,10 +108,27 @@ async def classify_devices(supervisor) -> dict:
     Manifest fetch failures fall back to iot_class="unknown".
     """
     try:
-        registry = await supervisor.get_entity_registry()
+        raw = await supervisor.get_entity_registry()
     except Exception as e:
-        logger.warning(f"Could not fetch entity registry: {e}")
+        logger.error(f"Entity registry fetch failed: {type(e).__name__}: {e}")
         return {}
+
+    # HA sometimes wraps the list: {"result": [...]} or {"entity_registry": [...]}
+    if isinstance(raw, dict):
+        registry = (
+            raw.get("result")
+            or raw.get("entity_registry")
+            or raw.get("data")
+            or []
+        )
+        logger.info(f"Entity registry returned a dict — keys: {list(raw.keys())}, extracted {len(registry)} entries")
+    elif isinstance(raw, list):
+        registry = raw
+    else:
+        logger.error(f"Entity registry returned unexpected type {type(raw)}: {repr(raw)[:200]}")
+        return {}
+
+    logger.info(f"Entity registry: {len(registry)} entries to classify")
 
     # Cache manifest lookups so we only fetch each domain once per run
     manifest_cache: dict[str, dict] = {}
