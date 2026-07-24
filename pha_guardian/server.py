@@ -389,6 +389,28 @@ async def ha_logbook(entity_id: str, hours: int = 24):
 
 
 # ---------------------------
+# Debug: Entity Registry
+# ---------------------------
+@app.get("/debug/entity-registry")
+async def debug_entity_registry():
+    """
+    Returns the raw entity registry response from HA.
+    Use this to verify the API endpoint works and check the response shape.
+    """
+    try:
+        raw = await supervisor.get_entity_registry()
+        if isinstance(raw, list):
+            return {
+                "type": "list",
+                "count": len(raw),
+                "first_3": raw[:3],
+            }
+        return {"type": type(raw).__name__, "value": raw}
+    except Exception as e:
+        return {"error": type(e).__name__, "detail": str(e)}
+
+
+# ---------------------------
 # Dropout Analysis Endpoint
 # ---------------------------
 @app.get("/ha/analyze/dropouts/{entity_id}")
