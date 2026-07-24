@@ -8,13 +8,13 @@ Classifies every entity in the HA entity registry by:
 
 Strategy
 --------
-1. Fetch the full entity registry from HA (one API call).
-2. For each unique integration domain, look up in KNOWN_INTEGRATIONS first.
-3. If not found, fetch the integration manifest from HA to get iot_class dynamically.
-4. Return a dict keyed by entity_id so callers can look up any entity cheaply.
+1. Try GET /api/config/entity_registry/list (REST endpoint, not available on all HA versions).
+2. If that fails or returns 0 entries, fall back to POST /api/template using
+   HA's integration_entities() Jinja2 function (available since HA 2022.4).
+   This is reliable and proven to work via the supervisor token.
+3. Build a classification dict keyed by entity_id.
 
-The result is included in every push payload as "device_registry" so the Django
-side can upsert DeviceClassification rows and gate paid features on is_local.
+The result is included in every push payload as "device_registry".
 """
 
 from logging import getLogger
@@ -23,7 +23,6 @@ logger = getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Static lookup table for common integrations.
-# iot_class mirrors the field name used in HA integration manifests.
 # ---------------------------------------------------------------------------
 KNOWN_INTEGRATIONS = {
     # Local Zigbee
@@ -33,12 +32,12 @@ KNOWN_INTEGRATIONS = {
     # Local Z-Wave
     "zwave_js":         {"iot_class": "local_push",    "protocol": "zwave"},
 
-    # Local Wi-Fi / hub-based (hub talks locally to HA)
+    # Local Wi-Fi / hub-based
     "esphome":          {"iot_class": "local_push",    "protocol": "wifi"},
     "shelly":           {"iot_class": "local_push",    "protocol": "wifi"},
     "sonos":            {"iot_class": "local_push",    "protocol": "wifi"},
     "lutron_caseta":    {"iot_class": "local_push",    "protocol": "wifi"},
-    "hue":              {"iot_class": "local_push",    "protocol": "zigbee"},  # bridge is LAN
+    "hue":              {"iot_class": "local_push",    "protocol": "zigbee"},
     "wled":             {"iot_class": "local_push",    "protocol": "wifi"},
     "kasa":             {"iot_class": "local_polling", "protocol": "wifi"},
     "homekit":          {"iot_class": "local_push",    "protocol": "wifi"},
@@ -65,7 +64,7 @@ KNOWN_INTEGRATIONS = {
     "tado":             {"iot_class": "cloud_polling", "protocol": "wifi"},
     "vera":             {"iot_class": "cloud_polling", "protocol": "mixed"},
 
-    # Virtual / internal (no physical device)
+    # Virtual / internal
     "template":         {"iot_class": "calculated",    "protocol": "virtual"},
     "group":            {"iot_class": "calculated",    "protocol": "virtual"},
     "input_boolean":    {"iot_class": "calculated",    "protocol": "virtual"},
@@ -90,41 +89,14 @@ def _is_local(iot_class: str) -> bool:
     return iot_class in LOCAL_IOT_CLASSES
 
 
-async def classify_devices(supervisor) -> dict:
+def _build_result_from_platform_map(platform_map: dict) -> dict:
     """
-    Query HA's entity registry and return a classification dict:
-
-        {
-            "binary_sensor.basement_sensor_motion": {
-                "integration": "smartthings",
-                "iot_class":   "cloud_push",
-                "protocol":    "mixed",
-                "is_local":    False,
-            },
-            ...
-        }
-
-    Unknown integrations are resolved by fetching their HA manifest.
-    Manifest fetch failures fall back to iot_class="unknown".
+    Given a dict of {entity_id: integration_name}, return the full
+    classification dict using KNOWN_INTEGRATIONS.
+    Entities whose integration isn't in KNOWN_INTEGRATIONS get iot_class='unknown'.
     """
-    try:
-        registry = await supervisor.get_entity_registry()
-    except Exception as e:
-        logger.warning(f"Could not fetch entity registry: {e}")
-        return {}
-
-    # Cache manifest lookups so we only fetch each domain once per run
-    manifest_cache: dict[str, dict] = {}
-
     result = {}
-    for entry in registry:
-        entity_id = entry.get("entity_id")
-        platform = entry.get("platform")  # integration domain
-
-        if not entity_id or not platform:
-            continue
-
-        # 1. Known integration — use static table
+    for entity_id, platform in platform_map.items():
         if platform in KNOWN_INTEGRATIONS:
             profile = KNOWN_INTEGRATIONS[platform]
             result[entity_id] = {
@@ -133,30 +105,85 @@ async def classify_devices(supervisor) -> dict:
                 "protocol":    profile["protocol"],
                 "is_local":    _is_local(profile["iot_class"]),
             }
-            continue
+        else:
+            result[entity_id] = {
+                "integration": platform,
+                "iot_class":   "unknown",
+                "protocol":    "unknown",
+                "is_local":    False,
+            }
+    return result
 
-        # 2. Unknown integration — try fetching the manifest
-        if platform not in manifest_cache:
-            try:
-                manifest = await supervisor.get_manifest(platform)
-                manifest_cache[platform] = manifest
-            except Exception:
-                manifest_cache[platform] = {}
 
-        manifest = manifest_cache.get(platform, {})
-        iot_class = manifest.get("iot_class", "unknown")
+async def classify_devices(supervisor) -> dict:
+    """
+    Return a classification dict keyed by entity_id.
 
-        result[entity_id] = {
-            "integration": platform,
-            "iot_class":   iot_class,
-            "protocol":    "unknown",
-            "is_local":    _is_local(iot_class),
-        }
+    Tries the entity registry REST endpoint first; falls back to the
+    template engine approach if that endpoint is unavailable.
+    """
 
+    # ------------------------------------------------------------------
+    # Path 1: entity registry REST endpoint
+    # ------------------------------------------------------------------
+    try:
+        raw = await supervisor.get_entity_registry()
+
+        # HA sometimes wraps the response in a dict
+        if isinstance(raw, dict):
+            registry = (
+                raw.get("result")
+                or raw.get("entity_registry")
+                or raw.get("data")
+                or []
+            )
+            logger.info(f"Entity registry (REST) returned a dict — keys: {list(raw.keys())}, "
+                        f"extracted {len(registry)} entries")
+        elif isinstance(raw, list):
+            registry = raw
+        else:
+            logger.warning(f"Entity registry (REST) returned unexpected type {type(raw)}, "
+                           f"will use template fallback")
+            registry = []
+
+        if registry:
+            logger.info(f"Entity registry (REST): {len(registry)} entries")
+            platform_map = {
+                entry.get("entity_id"): entry.get("platform")
+                for entry in registry
+                if entry.get("entity_id") and entry.get("platform")
+            }
+            result = _build_result_from_platform_map(platform_map)
+            _log_summary(result, source="REST")
+            return result
+        else:
+            logger.info("Entity registry (REST) returned 0 entries — trying template fallback")
+
+    except Exception as e:
+        logger.warning(f"Entity registry (REST) failed ({type(e).__name__}: {e}) "
+                       f"— trying template fallback")
+
+    # ------------------------------------------------------------------
+    # Path 2: template engine fallback (integration_entities, HA 2022.4+)
+    # ------------------------------------------------------------------
+    try:
+        known_integrations = list(KNOWN_INTEGRATIONS.keys())
+        platform_map = await supervisor.get_entity_platforms_via_template(known_integrations)
+        logger.info(f"Entity registry (template): {len(platform_map)} entities matched "
+                    f"across {len(known_integrations)} known integrations")
+        result = _build_result_from_platform_map(platform_map)
+        _log_summary(result, source="template")
+        return result
+
+    except Exception as e:
+        logger.error(f"Entity registry (template) also failed: {type(e).__name__}: {e}")
+        return {}
+
+
+def _log_summary(result: dict, source: str):
     local_count = sum(1 for v in result.values() if v["is_local"])
     cloud_count = sum(1 for v in result.values() if not v["is_local"] and v["iot_class"] != "unknown")
     logger.info(
-        f"Device classifier: {len(result)} entities — "
+        f"Device classifier ({source}): {len(result)} entities — "
         f"{local_count} local, {cloud_count} cloud"
     )
-    return result
