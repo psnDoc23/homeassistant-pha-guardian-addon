@@ -110,6 +110,10 @@ class SupervisorClient:
                     })
         return entries
 
+    async def get_ha_config(self) -> dict:
+        """Return HA's global config (includes time_zone, latitude, unit_system, etc.)."""
+        return await self._get_core("/config")
+
     async def get_entity_registry(self) -> list:
         """Return all entity registry entries from HA core (REST endpoint)."""
         return await self._get_core("/config/entity_registry/list")

@@ -58,7 +58,7 @@ PROPHETDATA_PUSH_URL = os.environ.get(
 
 
 
-async def push_to_prophetdata(issues: list, device_registry: dict = None):
+async def push_to_prophetdata(issues: list, device_registry: dict = None, ha_timezone: str = None):
     if not API_TOKEN:
         logger.info("Push skipped -- no API token configured")
         return
@@ -66,6 +66,8 @@ async def push_to_prophetdata(issues: list, device_registry: dict = None):
         payload = {"issues": issues}
         if device_registry:
             payload["device_registry"] = device_registry
+        if ha_timezone:
+            payload["ha_timezone"] = ha_timezone
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.post(
                 PROPHETDATA_PUSH_URL,
@@ -79,7 +81,20 @@ async def push_to_prophetdata(issues: list, device_registry: dict = None):
 
 
 
-async def run_checks() -> list:
+async def get_ha_timezone() -> str | None:
+    """Fetch the IANA timezone name from HA's config endpoint. Returns None on failure."""
+    try:
+        ha_config = await supervisor.get_ha_config()
+        tz = ha_config.get("time_zone")
+        if tz:
+            logger.info(f"HA timezone: {tz}")
+        return tz
+    except Exception as e:
+        logger.warning(f"Could not fetch HA timezone: {e}")
+        return None
+
+
+async def run_checks(ha_timezone: str | None = None) -> list:
     """Run all checkers and return issues. Used by both background polling and on-demand trigger."""
     from checkers.disk_space import check_disk_space
     from checkers.usb_path import check_usb_path
@@ -92,7 +107,7 @@ async def run_checks() -> list:
     all_issues += await check_disk_space(supervisor)
     all_issues += await check_usb_path(supervisor)
     all_issues += await check_device_dropouts(supervisor)
-    all_issues += await check_correlated_dropouts(supervisor)
+    all_issues += await check_correlated_dropouts(supervisor, ha_timezone=ha_timezone)
 
     monitored_ids = load_monitored_ids()
     if monitored_ids:
@@ -114,7 +129,8 @@ async def background_polling():
     while True:
         await asyncio.sleep(300)
         try:
-            all_issues = await run_checks()
+            ha_timezone = await get_ha_timezone()
+            all_issues = await run_checks(ha_timezone=ha_timezone)
 
             if all_issues:
                 logger.info(f"Background poll found {len(all_issues)} issue(s)")
@@ -128,7 +144,7 @@ async def background_polling():
                 logger.warning(f"Device classification failed, pushing without registry: {e}")
                 device_registry = None
 
-            await push_to_prophetdata(all_issues, device_registry)
+            await push_to_prophetdata(all_issues, device_registry, ha_timezone=ha_timezone)
 
         except Exception as e:
             logger.error(f"Background poll error: {e}")
@@ -212,7 +228,8 @@ async def trigger_check():
     """
     logger.info("On-demand trigger received -- running checks now")
     try:
-        all_issues = await run_checks()
+        ha_timezone = await get_ha_timezone()
+        all_issues = await run_checks(ha_timezone=ha_timezone)
 
         try:
             device_registry = await classify_devices(supervisor)
@@ -220,7 +237,7 @@ async def trigger_check():
             logger.warning(f"Device classification failed on trigger: {e}")
             device_registry = None
 
-        await push_to_prophetdata(all_issues, device_registry)
+        await push_to_prophetdata(all_issues, device_registry, ha_timezone=ha_timezone)
         logger.info(f"On-demand trigger complete -- {len(all_issues)} issue(s) pushed")
         return {"status": "ok", "issues_found": len(all_issues)}
     except Exception as e:

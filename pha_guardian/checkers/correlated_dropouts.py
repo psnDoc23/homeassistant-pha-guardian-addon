@@ -1,6 +1,6 @@
 # checkers/correlated_dropouts.py
 
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import hashlib
 
 HOURS_TO_CHECK = 48
@@ -9,7 +9,25 @@ MIN_DEVICES_IN_WINDOW = 3   # need at least this many to flag a correlated event
 PHYSICAL_DOMAINS = ["light", "switch", "binary_sensor", "sensor"]
 
 
-async def check_correlated_dropouts(supervisor) -> list:
+def _format_local(dt: datetime, ha_timezone: str | None) -> str:
+    """Format a datetime in the HA local timezone, falling back to UTC."""
+    try:
+        if ha_timezone:
+            try:
+                from zoneinfo import ZoneInfo
+            except ImportError:
+                from backports.zoneinfo import ZoneInfo
+            local_dt = dt.astimezone(ZoneInfo(ha_timezone))
+            abbr = local_dt.strftime('%Z')
+            return local_dt.strftime(f'%Y-%m-%d %H:%M {abbr}')
+    except Exception:
+        pass
+    # Fallback: display UTC explicitly
+    utc_dt = dt.astimezone(timezone.utc)
+    return utc_dt.strftime('%Y-%m-%d %H:%M UTC')
+
+
+async def check_correlated_dropouts(supervisor, ha_timezone: str | None = None) -> list:
     """
     Detects when multiple distinct devices went unavailable within the same
     short time window — a signal of a network or hub event rather than a
@@ -19,6 +37,9 @@ async def check_correlated_dropouts(supervisor) -> list:
     the dashboard shows one entry per device group rather than one per event.
     The issue ID is derived from the sorted device set, making it stable across
     pushes so user dismissals persist correctly.
+
+    ha_timezone: IANA timezone name from HA's config (e.g. "America/Denver").
+    Timestamps in the detail string are shown in this timezone when provided.
     """
     try:
         states = await supervisor._get_core("/states")
@@ -92,12 +113,13 @@ async def check_correlated_dropouts(supervisor) -> list:
         most_recent = max(timestamps)
         first_seen = min(timestamps)
 
+        most_recent_fmt = _format_local(most_recent, ha_timezone)
         if count == 1:
-            time_detail = f"around {most_recent.strftime('%Y-%m-%d %H:%M UTC')}"
+            time_detail = f"around {most_recent_fmt}"
         else:
             time_detail = (
                 f"{count} times in the last {HOURS_TO_CHECK}h "
-                f"(most recently {most_recent.strftime('%Y-%m-%d %H:%M UTC')})"
+                f"(most recently {most_recent_fmt})"
             )
 
         issues.append({
