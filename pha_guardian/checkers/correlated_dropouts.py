@@ -1,6 +1,7 @@
 # checkers/correlated_dropouts.py
 
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+import hashlib
 
 HOURS_TO_CHECK = 48
 WINDOW_MINUTES = 3          # devices dropping within this window are "correlated"
@@ -8,11 +9,37 @@ MIN_DEVICES_IN_WINDOW = 3   # need at least this many to flag a correlated event
 PHYSICAL_DOMAINS = ["light", "switch", "binary_sensor", "sensor"]
 
 
-async def check_correlated_dropouts(supervisor) -> list:
+def _format_local(dt: datetime, ha_timezone: str | None) -> str:
+    """Format a datetime in the HA local timezone, falling back to UTC."""
+    try:
+        if ha_timezone:
+            try:
+                from zoneinfo import ZoneInfo
+            except ImportError:
+                from backports.zoneinfo import ZoneInfo
+            local_dt = dt.astimezone(ZoneInfo(ha_timezone))
+            abbr = local_dt.strftime('%Z')
+            return local_dt.strftime(f'%Y-%m-%d %H:%M {abbr}')
+    except Exception:
+        pass
+    # Fallback: display UTC explicitly
+    utc_dt = dt.astimezone(timezone.utc)
+    return utc_dt.strftime('%Y-%m-%d %H:%M UTC')
+
+
+async def check_correlated_dropouts(supervisor, ha_timezone: str | None = None) -> list:
     """
     Detects when multiple distinct devices went unavailable within the same
     short time window — a signal of a network or hub event rather than a
-    single flaky device. Returns at most a few summary issues.
+    single flaky device.
+
+    Groups all windows that share the same device set into a single issue so
+    the dashboard shows one entry per device group rather than one per event.
+    The issue ID is derived from the sorted device set, making it stable across
+    pushes so user dismissals persist correctly.
+
+    ha_timezone: IANA timezone name from HA's config (e.g. "America/Denver").
+    Timestamps in the detail string are shown in this timezone when provided.
     """
     try:
         states = await supervisor._get_core("/states")
@@ -47,14 +74,14 @@ async def check_correlated_dropouts(supervisor) -> list:
     # Sort chronologically so we can sweep a window across them
     dropout_events.sort(key=lambda x: x[0])
 
-    issues = []
+    # Identify each correlated window
+    windows = []  # list of (window_start, frozenset of entity_ids)
     used_indices = set()
 
     for i in range(len(dropout_events)):
         if i in used_indices:
             continue
         window_start = dropout_events[i][0]
-        # Gather all events within WINDOW_MINUTES of this one
         group = []
         for j in range(i, len(dropout_events)):
             if (dropout_events[j][0] - window_start).total_seconds() <= WINDOW_MINUTES * 60:
@@ -62,28 +89,60 @@ async def check_correlated_dropouts(supervisor) -> list:
             else:
                 break
 
-        distinct_entities = {dropout_events[k][1] for k in group}
+        distinct_entities = frozenset(dropout_events[k][1] for k in group)
         if len(distinct_entities) >= MIN_DEVICES_IN_WINDOW:
             for k in group:
                 used_indices.add(k)
-            issues.append({
-                "id": f"correlated_dropout_{int(window_start.timestamp())}",
-                "title": f"Correlated dropout: {len(distinct_entities)} devices offline together",
-                "detail": (
-                    f"{len(distinct_entities)} devices went unavailable within "
-                    f"{WINDOW_MINUTES} minutes around {window_start.strftime('%Y-%m-%d %H:%M UTC')}. "
-                    "This often indicates a network or hub event rather than a single faulty device."
-                ),
-                "severity": "high",
-                "suggestion": (
-                    "Multiple devices dropping at once usually points to your network "
-                    "or Home Assistant hub, not the individual devices. Check whether your "
-                    "router, Wi-Fi, or Zigbee/Z-Wave coordinator restarted or lost power "
-                    "around this time."
-                ),
-                "fixable": False,
-                "involved_entities": sorted(distinct_entities), 
-            })
+            windows.append((window_start, distinct_entities))
+
+    # Group windows by device set — same devices = same underlying issue
+    # Key: frozenset of entity_ids → list of window_start timestamps
+    groups: dict[frozenset, list] = {}
+    for window_start, entities in windows:
+        groups.setdefault(entities, []).append(window_start)
+
+    issues = []
+    for entities, timestamps in groups.items():
+        sorted_entities = sorted(entities)
+        # Stable ID: hash of the sorted device set, not a timestamp
+        device_key = "|".join(sorted_entities)
+        stable_hash = hashlib.sha1(device_key.encode()).hexdigest()[:10]
+        issue_id = f"correlated_dropout_{stable_hash}"
+
+        count = len(timestamps)
+        most_recent = max(timestamps)
+        first_seen = min(timestamps)
+
+        most_recent_fmt = _format_local(most_recent, ha_timezone)
+        if count == 1:
+            time_detail = f"around {most_recent_fmt}"
+        else:
+            time_detail = (
+                f"{count} times in the last {HOURS_TO_CHECK}h "
+                f"(most recently {most_recent_fmt})"
+            )
+
+        issues.append({
+            "id": issue_id,
+            "title": f"Correlated dropout: {len(sorted_entities)} devices offline together",
+            "detail": (
+                f"{len(sorted_entities)} devices went unavailable within "
+                f"{WINDOW_MINUTES} minutes of each other {time_detail}. "
+                "This often indicates a network or hub event rather than a single faulty device."
+            ),
+            "severity": "high",
+            "suggestion": (
+                "Multiple devices dropping at once usually points to your network "
+                "or Home Assistant hub, not the individual devices. Check whether your "
+                "router, Wi-Fi, or Zigbee/Z-Wave coordinator restarted or lost power "
+                "around this time."
+            ),
+            "fixable": False,
+            "involved_entities": sorted_entities,
+            "occurrence_count": count,
+            "most_recent_ts": most_recent.isoformat(),
+            "first_seen_ts": first_seen.isoformat(),
+        })
 
     return issues
 
