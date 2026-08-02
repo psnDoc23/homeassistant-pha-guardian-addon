@@ -19,12 +19,12 @@ def _format_local(dt: datetime, ha_timezone: str | None) -> str:
                 from backports.zoneinfo import ZoneInfo
             local_dt = dt.astimezone(ZoneInfo(ha_timezone))
             abbr = local_dt.strftime('%Z')
-            return local_dt.strftime(f'%Y-%m-%d %H:%M {abbr}')
+            return local_dt.strftime(f'%Y-%m-%d %-I:%M %p {abbr}').replace('AM', 'am').replace('PM', 'pm')
     except Exception:
         pass
     # Fallback: display UTC explicitly
     utc_dt = dt.astimezone(timezone.utc)
-    return utc_dt.strftime('%Y-%m-%d %H:%M UTC')
+    return utc_dt.strftime('%Y-%m-%d %-I:%M %p UTC').replace('AM', 'am').replace('PM', 'pm')
 
 
 async def check_correlated_dropouts(supervisor, ha_timezone: str | None = None) -> list:
