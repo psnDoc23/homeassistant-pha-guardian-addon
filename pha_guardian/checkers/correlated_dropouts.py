@@ -1,12 +1,12 @@
 # checkers/correlated_dropouts.py
 
 from datetime import datetime, timezone, timedelta
-import hashlib
 
 HOURS_TO_CHECK = 48
 WINDOW_MINUTES = 3          # devices dropping within this window are "correlated"
 MIN_DEVICES_IN_WINDOW = 3   # need at least this many to flag a correlated event
 PHYSICAL_DOMAINS = ["light", "switch", "binary_sensor", "sensor"]
+BUCKET_MINUTES = 10         # floor window_start to this many minutes for stable IDs
 
 
 def _format_local(dt: datetime, ha_timezone: str | None) -> str:
@@ -33,10 +33,12 @@ async def check_correlated_dropouts(supervisor, ha_timezone: str | None = None) 
     short time window — a signal of a network or hub event rather than a
     single flaky device.
 
-    Groups all windows that share the same device set into a single issue so
-    the dashboard shows one entry per device group rather than one per event.
-    The issue ID is derived from the sorted device set, making it stable across
-    pushes so user dismissals persist correctly.
+    Groups all windows that fall in the same BUCKET_MINUTES time bucket into a
+    single issue.  The issue ID is derived from the bucket epoch (window_start
+    floored to BUCKET_MINUTES), NOT from the exact device set.  This makes IDs
+    stable across re-detections of the same underlying event even when a
+    slightly different device set is observed between pushes (e.g. 38 vs 40
+    devices for the same hub restart), so user dismissals persist correctly.
 
     ha_timezone: IANA timezone name from HA's config (e.g. "America/Denver").
     Timestamps in the detail string are shown in this timezone when provided.
@@ -95,19 +97,26 @@ async def check_correlated_dropouts(supervisor, ha_timezone: str | None = None) 
                 used_indices.add(k)
             windows.append((window_start, distinct_entities))
 
-    # Group windows by device set — same devices = same underlying issue
-    # Key: frozenset of entity_ids → list of window_start timestamps
-    groups: dict[frozenset, list] = {}
+    # Group windows by time bucket — same bucket = same underlying event,
+    # even if the exact device set varies slightly between pushes.
+    # Key: bucket_epoch (window_start floored to BUCKET_MINUTES) → {entities, timestamps}
+    _bucket_secs = BUCKET_MINUTES * 60
+    groups: dict[int, dict] = {}
     for window_start, entities in windows:
-        groups.setdefault(entities, []).append(window_start)
+        bucket_epoch = int(window_start.timestamp()) // _bucket_secs * _bucket_secs
+        if bucket_epoch not in groups:
+            groups[bucket_epoch] = {'entities': set(), 'timestamps': []}
+        groups[bucket_epoch]['entities'].update(entities)
+        groups[bucket_epoch]['timestamps'].append(window_start)
 
     issues = []
-    for entities, timestamps in groups.items():
-        sorted_entities = sorted(entities)
-        # Stable ID: hash of the sorted device set, not a timestamp
-        device_key = "|".join(sorted_entities)
-        stable_hash = hashlib.sha1(device_key.encode()).hexdigest()[:10]
-        issue_id = f"correlated_dropout_{stable_hash}"
+    for bucket_epoch, data in groups.items():
+        sorted_entities = sorted(data['entities'])
+        timestamps = data['timestamps']
+        # Stable ID: 10-minute bucket epoch of the earliest window start.
+        # Survives small device-set variations between pushes for the same
+        # underlying event (e.g. hub restart seen as 38 vs 40 devices).
+        issue_id = f"correlated_dropout_{bucket_epoch}"
 
         count = len(timestamps)
         most_recent = max(timestamps)
