@@ -8,6 +8,14 @@ MIN_DEVICES_IN_WINDOW = 3   # need at least this many to flag a correlated event
 PHYSICAL_DOMAINS = ["light", "switch", "binary_sensor", "sensor"]
 BUCKET_MINUTES = 10         # floor window_start to this many minutes for stable IDs
 
+# Integrations whose entities go unavailable for non-hardware reasons
+# (phone leaves home, app disconnects, etc.) and must be excluded from
+# dropout detection to avoid false correlated-dropout alerts.
+COMPANION_INTEGRATIONS = frozenset({
+    "mobile_app",  # HA companion app (iOS and Android)
+    "ios",         # legacy iOS integration
+})
+
 
 def _format_local(dt: datetime, ha_timezone: str | None) -> str:
     """Format a datetime in the HA local timezone, falling back to UTC."""
@@ -27,6 +35,40 @@ def _format_local(dt: datetime, ha_timezone: str | None) -> str:
     return utc_dt.strftime('%Y-%m-%d %-I:%M %p UTC').replace('AM', 'am').replace('PM', 'pm')
 
 
+async def _get_companion_entity_ids(supervisor) -> frozenset:
+    """
+    Return entity IDs that belong to companion-app integrations (mobile_app,
+    ios, etc.).  These sensors go unavailable when a phone leaves home — not
+    because of a hardware or network fault — so they must be excluded from
+    dropout detection.
+
+    Falls back to an empty frozenset on any error so the checker keeps working
+    even when the entity registry endpoint is unavailable.
+    """
+    try:
+        raw = await supervisor.get_entity_registry()
+        if isinstance(raw, dict):
+            registry = (
+                raw.get("result")
+                or raw.get("entity_registry")
+                or raw.get("data")
+                or []
+            )
+        elif isinstance(raw, list):
+            registry = raw
+        else:
+            registry = []
+        return frozenset(
+            entry["entity_id"]
+            for entry in registry
+            if isinstance(entry, dict)
+            and entry.get("platform") in COMPANION_INTEGRATIONS
+            and entry.get("entity_id")
+        )
+    except Exception:
+        return frozenset()
+
+
 async def check_correlated_dropouts(supervisor, ha_timezone: str | None = None) -> list:
     """
     Detects when multiple distinct devices went unavailable within the same
@@ -39,6 +81,10 @@ async def check_correlated_dropouts(supervisor, ha_timezone: str | None = None) 
     stable across re-detections of the same underlying event even when a
     slightly different device set is observed between pushes (e.g. 38 vs 40
     devices for the same hub restart), so user dismissals persist correctly.
+
+    Companion-app entities (mobile_app / ios) are excluded before history is
+    fetched: phone sensors going unavailable when someone leaves home are not
+    hardware dropouts and must not inflate correlated-dropout counts.
 
     ha_timezone: IANA timezone name from HA's config (e.g. "America/Denver").
     Timestamps in the detail string are shown in this timezone when provided.
@@ -54,9 +100,12 @@ async def check_correlated_dropouts(supervisor, ha_timezone: str | None = None) 
             "fixable": False,
         }]
 
+    # Fetch companion-app entity IDs to exclude from dropout detection.
+    companion_ids = await _get_companion_entity_ids(supervisor)
+
     candidates = [
         s for s in states
-        if _is_physical_entity(s.get("entity_id", ""))
+        if _is_physical_entity(s.get("entity_id", ""), companion_ids)
     ]
 
     # Collect every (timestamp, entity_id) where a device went unavailable
@@ -156,7 +205,17 @@ async def check_correlated_dropouts(supervisor, ha_timezone: str | None = None) 
     return issues
 
 
-def _is_physical_entity(entity_id: str) -> bool:
+def _is_physical_entity(entity_id: str, skip_ids: frozenset = frozenset()) -> bool:
+    """
+    Return True for physical device entities that should be monitored for
+    dropouts.
+
+    skip_ids: entity IDs to always exclude regardless of domain — used to
+    filter out companion-app entities (mobile_app, ios) whose unavailability
+    reflects a phone leaving home, not a hardware fault.
+    """
+    if entity_id in skip_ids:
+        return False
     domain = entity_id.split(".")[0]
     if domain not in PHYSICAL_DOMAINS:
         return False
@@ -170,7 +229,3 @@ def _parse(when: str):
         return datetime.fromisoformat(when)
     except Exception:
         return None
-
-
-
-        

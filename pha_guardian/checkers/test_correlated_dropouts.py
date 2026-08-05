@@ -1,6 +1,8 @@
 """
 Unit tests for correlated_dropouts.py — specifically the stable bucket-based
-ID generation introduced to fix dismissed issues reappearing on every push.
+ID generation introduced to fix dismissed issues reappearing on every push,
+and companion-app entity exclusion to prevent phone sensors from inflating
+correlated-dropout counts.
 """
 
 import asyncio
@@ -22,18 +24,21 @@ def _ts(hour: int, minute: int, second: int = 0) -> str:
     return dt.isoformat()
 
 
-def _make_supervisor(states, history_map):
+def _make_supervisor(states, history_map, registry=None):
     """
     Build a minimal mock supervisor.
 
     states      — list of {"entity_id": str} dicts
     history_map — dict mapping entity_id → list of {"state": str, "when": str}
+    registry    — list of {"entity_id": str, "platform": str} dicts for the
+                  entity registry (defaults to empty list, i.e. no companions)
     """
     supervisor = AsyncMock()
     supervisor._get_core = AsyncMock(return_value=states)
     supervisor.get_history = AsyncMock(
         side_effect=lambda eid, hours: history_map.get(eid, [])
     )
+    supervisor.get_entity_registry = AsyncMock(return_value=registry or [])
     return supervisor
 
 
@@ -144,3 +149,120 @@ class TestBucketBasedStableIDs:
         correlated = [i for i in issues if i["id"].startswith("correlated_dropout_")]
         assert len(correlated) == 2, f"Expected 2 issues, got: {[i['id'] for i in correlated]}"
         assert correlated[0]["id"] != correlated[1]["id"]
+
+
+# ---------------------------------------------------------------------------
+# Companion-app entity exclusion tests
+# ---------------------------------------------------------------------------
+
+class TestCompanionAppExclusion:
+    """
+    Phone sensors (mobile_app / ios integration) go unavailable when the owner
+    leaves home, not due to a hardware or network fault.  They must be excluded
+    from correlated-dropout detection so they don't inflate event counts or
+    pull unrelated real devices into a false alert.
+    """
+
+    DROP_TIME = "2026-07-29T08:00:00+00:00"
+
+    def test_mobile_app_entities_excluded(self):
+        """
+        When phone sensors drop at the same time as real devices, only the
+        real devices should appear in the correlated-dropout issue.
+        """
+        real_devices = ["light.kitchen", "switch.fan", "sensor.temp"]
+        phone_sensors = [
+            "sensor.alice_iphone_bssid",
+            "sensor.alice_iphone_ssid",
+            "sensor.alice_iphone_battery",
+            "sensor.alice_iphone_storage",
+        ]
+        all_entities = real_devices + phone_sensors
+
+        states = [{"entity_id": e} for e in all_entities]
+        history = {e: [{"state": "unavailable", "when": self.DROP_TIME}] for e in all_entities}
+        # Registry marks phone sensors as mobile_app
+        registry = (
+            [{"entity_id": e, "platform": "mobile_app"} for e in phone_sensors]
+            + [{"entity_id": e, "platform": "zha"} for e in real_devices]
+        )
+
+        sup = _make_supervisor(states, history, registry=registry)
+        issues = _run(check_correlated_dropouts(sup))
+
+        correlated = [i for i in issues if i["id"].startswith("correlated_dropout_")]
+        assert len(correlated) == 1
+
+        involved = set(correlated[0]["involved_entities"])
+        # Real devices must be present
+        for d in real_devices:
+            assert d in involved, f"Real device {d} missing from involved_entities"
+        # Phone sensors must be absent
+        for p in phone_sensors:
+            assert p not in involved, f"Phone sensor {p} must not appear in involved_entities"
+
+    def test_ios_integration_entities_excluded(self):
+        """Entities from the legacy 'ios' integration are also excluded."""
+        real_devices = ["light.a", "light.b", "switch.c"]
+        ios_sensors = ["sensor.bob_iphone_battery", "sensor.bob_iphone_ssid"]
+        all_entities = real_devices + ios_sensors
+
+        states = [{"entity_id": e} for e in all_entities]
+        history = {e: [{"state": "unavailable", "when": self.DROP_TIME}] for e in all_entities}
+        registry = (
+            [{"entity_id": e, "platform": "ios"} for e in ios_sensors]
+            + [{"entity_id": e, "platform": "zha"} for e in real_devices]
+        )
+
+        sup = _make_supervisor(states, history, registry=registry)
+        issues = _run(check_correlated_dropouts(sup))
+
+        correlated = [i for i in issues if i["id"].startswith("correlated_dropout_")]
+        assert len(correlated) == 1
+        involved = set(correlated[0]["involved_entities"])
+        for s in ios_sensors:
+            assert s not in involved, f"iOS sensor {s} must not appear in involved_entities"
+
+    def test_only_phone_sensors_drop_no_correlated_issue(self):
+        """
+        When only companion-app sensors drop (no real devices), the checker
+        must not raise a correlated-dropout issue at all.
+        """
+        phone_sensors = [
+            "sensor.alice_iphone_bssid",
+            "sensor.alice_iphone_ssid",
+            "sensor.alice_iphone_battery",
+            "sensor.alice_iphone_storage",
+            "sensor.alice_iphone_connection_type",
+        ]
+        states = [{"entity_id": e} for e in phone_sensors]
+        history = {e: [{"state": "unavailable", "when": self.DROP_TIME}] for e in phone_sensors}
+        registry = [{"entity_id": e, "platform": "mobile_app"} for e in phone_sensors]
+
+        sup = _make_supervisor(states, history, registry=registry)
+        issues = _run(check_correlated_dropouts(sup))
+
+        correlated = [i for i in issues if i["id"].startswith("correlated_dropout_")]
+        assert correlated == [], (
+            f"Expected no correlated dropout when only phone sensors drop, got: {correlated}"
+        )
+
+    def test_registry_failure_falls_back_gracefully(self):
+        """
+        If the entity registry endpoint is unavailable, the checker must still
+        return results (falling back to including all physical entities).
+        """
+        devices = ["light.kitchen", "switch.fan", "sensor.temp"]
+        states = [{"entity_id": d} for d in devices]
+        history = {d: [{"state": "unavailable", "when": self.DROP_TIME}] for d in devices}
+
+        sup = _make_supervisor(states, history)
+        # Override get_entity_registry to raise an exception
+        sup.get_entity_registry = AsyncMock(side_effect=Exception("registry unavailable"))
+
+        # Must not raise — falls back to frozenset() and processes all entities
+        issues = _run(check_correlated_dropouts(sup))
+        correlated = [i for i in issues if i["id"].startswith("correlated_dropout_")]
+        assert len(correlated) == 1, (
+            f"Expected 1 issue with graceful fallback, got: {correlated}"
+        )

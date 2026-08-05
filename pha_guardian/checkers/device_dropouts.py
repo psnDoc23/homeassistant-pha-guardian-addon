@@ -6,12 +6,58 @@ DROPOUT_THRESHOLD = 5 # minimum dropouts in window to raise an issue
 HOURS_TO_CHECK = 48
 PHYSICAL_DOMAINS = ["light", "switch", "binary_sensor", "sensor"]
 
+# Integrations whose entities go unavailable for non-hardware reasons
+# (phone leaves home, app disconnects, etc.) and must be excluded from
+# dropout detection to avoid false alerts.
+COMPANION_INTEGRATIONS = frozenset({
+    "mobile_app",  # HA companion app (iOS and Android)
+    "ios",         # legacy iOS integration
+})
+
+
+async def _get_companion_entity_ids(supervisor) -> frozenset:
+    """
+    Return entity IDs that belong to companion-app integrations (mobile_app,
+    ios, etc.).  These sensors go unavailable when a phone leaves home — not
+    because of a hardware or network fault — so they must be excluded from
+    dropout detection.
+
+    Falls back to an empty frozenset on any error so the checker keeps working
+    even when the entity registry endpoint is unavailable.
+    """
+    try:
+        raw = await supervisor.get_entity_registry()
+        if isinstance(raw, dict):
+            registry = (
+                raw.get("result")
+                or raw.get("entity_registry")
+                or raw.get("data")
+                or []
+            )
+        elif isinstance(raw, list):
+            registry = raw
+        else:
+            registry = []
+        return frozenset(
+            entry["entity_id"]
+            for entry in registry
+            if isinstance(entry, dict)
+            and entry.get("platform") in COMPANION_INTEGRATIONS
+            and entry.get("entity_id")
+        )
+    except Exception:
+        return frozenset()
+
 
 async def check_device_dropouts(supervisor) -> list:
     """
     Scans all physical (non-group) entities for repeated unavailability
     in the last 48 hours. Returns one issue per affected device, including
     a timestamped events array for each dropout interval.
+
+    Companion-app entities (mobile_app / ios) are excluded before history is
+    fetched: phone sensors going unavailable when someone leaves home are not
+    hardware dropouts and must not surface as individual device issues.
     """
     issues = []
 
@@ -26,10 +72,13 @@ async def check_device_dropouts(supervisor) -> list:
             "fixable": False,
         }]
 
-    # Filter to physical entities only — skip groups and areas
+    # Fetch companion-app entity IDs to exclude from dropout detection.
+    companion_ids = await _get_companion_entity_ids(supervisor)
+
+    # Filter to physical entities only — skip groups, areas, and companion-app sensors
     candidates = [
         s for s in states
-        if _is_physical_entity(s.get("entity_id", ""))
+        if _is_physical_entity(s.get("entity_id", ""), companion_ids)
     ]
 
     for state in candidates:
@@ -68,8 +117,17 @@ async def check_device_dropouts(supervisor) -> list:
     return issues
 
 
-def _is_physical_entity(entity_id: str) -> bool:
-    """Returns True for physical device entities, False for groups/areas."""
+def _is_physical_entity(entity_id: str, skip_ids: frozenset = frozenset()) -> bool:
+    """
+    Return True for physical device entities that should be monitored for
+    dropouts.
+
+    skip_ids: entity IDs to always exclude regardless of domain — used to
+    filter out companion-app entities (mobile_app, ios) whose unavailability
+    reflects a phone leaving home, not a hardware fault.
+    """
+    if entity_id in skip_ids:
+        return False
     domain = entity_id.split(".")[0]
     if domain not in PHYSICAL_DOMAINS:
         return False

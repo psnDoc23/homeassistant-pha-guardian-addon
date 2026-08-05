@@ -64,6 +64,12 @@ KNOWN_INTEGRATIONS = {
     "tado":             {"iot_class": "cloud_polling", "protocol": "wifi"},
     "vera":             {"iot_class": "cloud_polling", "protocol": "mixed"},
 
+    # Mobile companion apps — sensors go unavailable when phone leaves home,
+    # not due to hardware failure.  Classified as "calculated" (virtual) so
+    # the dashboard does not count them as cloud-connected hardware.
+    "mobile_app":       {"iot_class": "calculated",    "protocol": "virtual"},
+    "ios":              {"iot_class": "calculated",    "protocol": "virtual"},
+
     # Virtual / internal
     "template":         {"iot_class": "calculated",    "protocol": "virtual"},
     "group":            {"iot_class": "calculated",    "protocol": "virtual"},
