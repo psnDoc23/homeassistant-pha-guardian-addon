@@ -76,6 +76,7 @@ async def _get_device_info(supervisor) -> tuple:
         else:
             devices = []
 
+        service_device_ids = set()
         for dev in devices:
             if not isinstance(dev, dict):
                 continue
@@ -90,6 +91,22 @@ async def _get_device_info(supervisor) -> tuple:
                 or dev_id
             )
             device_names[dev_id] = name
+            # HA marks software/virtual devices (companion apps, weather services,
+            # voice assistants, etc.) with entry_type="service". Physical hardware
+            # devices have entry_type=None. Excluding by entry_type catches any
+            # future virtual integration automatically without a code change.
+            if dev.get("entry_type") == "service":
+                service_device_ids.add(dev_id)
+
+        # Extend companion_ids with entities whose device is service-type.
+        # This is additive — the COMPANION_INTEGRATIONS frozenset above still
+        # catches entities that have no device_id at all.
+        service_entity_ids = frozenset(
+            entity_id
+            for entity_id, device_id in entity_to_device.items()
+            if device_id in service_device_ids
+        )
+        companion_ids = companion_ids | service_entity_ids
     except Exception:
         pass
 

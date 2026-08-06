@@ -37,14 +37,25 @@ def _format_local(dt: datetime, ha_timezone: str | None) -> str:
 
 async def _get_companion_entity_ids(supervisor) -> frozenset:
     """
-    Return entity IDs that belong to companion-app integrations (mobile_app,
-    ios, etc.).  These sensors go unavailable when a phone leaves home — not
-    because of a hardware or network fault — so they must be excluded from
-    dropout detection.
+    Return entity IDs that should be excluded from correlated dropout detection
+    because their unavailability reflects a software/virtual event (phone leaving
+    home, cloud service restarting) rather than a hardware or network fault.
+
+    Two complementary strategies are used so neither alone is a single point of
+    failure:
+
+    1. Integration-name allowlist (COMPANION_INTEGRATIONS) — catches entities
+       that have no device_id but belong to a known companion platform.
+    2. Device registry entry_type="service" — catches any virtual/software
+       integration automatically, including future ones we haven't hardcoded.
+       Physical hardware devices always have entry_type=None in HA.
 
     Falls back to an empty frozenset on any error so the checker keeps working
-    even when the entity registry endpoint is unavailable.
+    even when a registry endpoint is unavailable.
     """
+    # --- Entity registry: integration-name exclusions + entity→device mapping ---
+    integration_excluded = frozenset()
+    entity_to_device = {}
     try:
         raw = await supervisor.get_entity_registry()
         if isinstance(raw, dict):
@@ -58,15 +69,54 @@ async def _get_companion_entity_ids(supervisor) -> frozenset:
             registry = raw
         else:
             registry = []
-        return frozenset(
+
+        integration_excluded = frozenset(
             entry["entity_id"]
             for entry in registry
             if isinstance(entry, dict)
             and entry.get("platform") in COMPANION_INTEGRATIONS
             and entry.get("entity_id")
         )
+        entity_to_device = {
+            entry["entity_id"]: entry.get("device_id")
+            for entry in registry
+            if isinstance(entry, dict) and entry.get("entity_id")
+        }
     except Exception:
-        return frozenset()
+        pass
+
+    # --- Device registry: entry_type="service" exclusions ---
+    service_entity_ids = frozenset()
+    try:
+        raw_devices = await supervisor._get_core("/config/device_registry/list")
+        if isinstance(raw_devices, dict):
+            devices = (
+                raw_devices.get("result")
+                or raw_devices.get("devices")
+                or raw_devices.get("data")
+                or []
+            )
+        elif isinstance(raw_devices, list):
+            devices = raw_devices
+        else:
+            devices = []
+
+        service_device_ids = frozenset(
+            dev["id"]
+            for dev in devices
+            if isinstance(dev, dict)
+            and dev.get("id")
+            and dev.get("entry_type") == "service"
+        )
+        service_entity_ids = frozenset(
+            entity_id
+            for entity_id, device_id in entity_to_device.items()
+            if device_id in service_device_ids
+        )
+    except Exception:
+        pass
+
+    return integration_excluded | service_entity_ids
 
 
 async def check_correlated_dropouts(supervisor, ha_timezone: str | None = None) -> list:

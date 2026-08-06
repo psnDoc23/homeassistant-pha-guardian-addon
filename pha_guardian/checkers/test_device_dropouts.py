@@ -263,6 +263,115 @@ class TestDeviceGrouping:
         assert issues == []
 
 
+class TestServiceTypeExclusion:
+    """Entities whose HA device has entry_type='service' are excluded automatically."""
+
+    def test_service_type_device_excluded(self):
+        """A future virtual integration excluded via entry_type without being in COMPANION_INTEGRATIONS."""
+        entity_registry = [
+            # 'some_future_app' is NOT in COMPANION_INTEGRATIONS — only entry_type catches it
+            {"entity_id": "sensor.future_app_status", "platform": "some_future_app", "device_id": "dev-svc"},
+        ]
+        device_registry = [
+            {"id": "dev-svc", "name": "Future App", "entry_type": "service"},
+        ]
+        states = [
+            {"entity_id": "sensor.future_app_status", "attributes": {}},
+        ]
+        history = {
+            "sensor.future_app_status": _make_unavailable_history("sensor.future_app_status", 10),
+        }
+
+        supervisor = _make_supervisor(states, history, entity_registry, device_registry)
+        issues = _run(check_device_dropouts(supervisor))
+
+        assert issues == []
+
+    def test_physical_device_null_entry_type_included(self):
+        """Hardware device with entry_type=None (the default) is NOT excluded."""
+        entity_registry = [
+            {"entity_id": "light.kitchen_pendant", "platform": "zha", "device_id": "dev-zha"},
+        ]
+        device_registry = [
+            {"id": "dev-zha", "name": "Kitchen Pendant", "entry_type": None},
+        ]
+        states = [
+            {"entity_id": "light.kitchen_pendant", "attributes": {"friendly_name": "Kitchen Pendant"}},
+        ]
+        history = {
+            "light.kitchen_pendant": _make_unavailable_history("light.kitchen_pendant", 5),
+        }
+
+        supervisor = _make_supervisor(states, history, entity_registry, device_registry)
+        issues = _run(check_device_dropouts(supervisor))
+
+        assert len(issues) == 1
+        assert issues[0]["id"] == "dropout_device_dev-zha"
+
+    def test_service_type_and_hardware_mixed(self):
+        """Service-type device excluded while hardware device on same push still raises an issue."""
+        entity_registry = [
+            {"entity_id": "sensor.weather_temp",   "platform": "weather_service", "device_id": "dev-svc"},
+            {"entity_id": "light.living_room_lamp", "platform": "zha",             "device_id": "dev-hw"},
+        ]
+        device_registry = [
+            {"id": "dev-svc", "name": "Weather",      "entry_type": "service"},
+            {"id": "dev-hw",  "name": "Living Room Lamp", "entry_type": None},
+        ]
+        states = [
+            {"entity_id": "sensor.weather_temp",    "attributes": {}},
+            {"entity_id": "light.living_room_lamp", "attributes": {}},
+        ]
+        history = {
+            "sensor.weather_temp":    _make_unavailable_history("sensor.weather_temp", 8),
+            "light.living_room_lamp": _make_unavailable_history("light.living_room_lamp", 6),
+        }
+
+        supervisor = _make_supervisor(states, history, entity_registry, device_registry)
+        issues = _run(check_device_dropouts(supervisor))
+
+        assert len(issues) == 1
+        assert issues[0]["id"] == "dropout_device_dev-hw"
+
+    def test_device_registry_unavailable_falls_back_gracefully(self):
+        """If device registry endpoint fails, checker still works using integration-name exclusions."""
+        entity_registry = [
+            {"entity_id": "sensor.iphone_bssid", "platform": "mobile_app", "device_id": "dev-phone"},
+            {"entity_id": "light.kitchen",       "platform": "zha",        "device_id": "dev-zha"},
+        ]
+        states = [
+            {"entity_id": "sensor.iphone_bssid", "attributes": {}},
+            {"entity_id": "light.kitchen",       "attributes": {}},
+        ]
+        history = {
+            "sensor.iphone_bssid": _make_unavailable_history("sensor.iphone_bssid", 10),
+            "light.kitchen":       _make_unavailable_history("light.kitchen", 5),
+        }
+
+        # Simulate device registry failure by raising on that path
+        import asyncio
+        from unittest.mock import AsyncMock
+
+        supervisor = AsyncMock()
+
+        async def _get_core_fail(path):
+            if path == "/states":
+                return states
+            raise RuntimeError("device registry unavailable")
+
+        supervisor._get_core = AsyncMock(side_effect=_get_core_fail)
+        supervisor.get_history = AsyncMock(
+            side_effect=lambda eid, hours: history.get(eid, [])
+        )
+        supervisor.get_entity_registry = AsyncMock(return_value=entity_registry)
+
+        issues = _run(check_device_dropouts(supervisor))
+
+        # iphone excluded via integration-name fallback; kitchen light still detected
+        assert len(issues) == 1
+        assert "kitchen" in issues[0]["entity_ids"][0]
+
+
 # ---------------------------------------------------------------------------
 # Existing unit tests preserved
 # ---------------------------------------------------------------------------

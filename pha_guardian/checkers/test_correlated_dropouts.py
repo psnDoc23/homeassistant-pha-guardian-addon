@@ -24,17 +24,27 @@ def _ts(hour: int, minute: int, second: int = 0) -> str:
     return dt.isoformat()
 
 
-def _make_supervisor(states, history_map, registry=None):
+def _make_supervisor(states, history_map, registry=None, device_registry=None):
     """
     Build a minimal mock supervisor.
 
-    states      — list of {"entity_id": str} dicts
-    history_map — dict mapping entity_id → list of {"state": str, "when": str}
-    registry    — list of {"entity_id": str, "platform": str} dicts for the
-                  entity registry (defaults to empty list, i.e. no companions)
+    states          — list of {"entity_id": str} dicts
+    history_map     — dict mapping entity_id → list of {"state": str, "when": str}
+    registry        — list of {"entity_id": str, "platform": str, "device_id": str}
+                      dicts for the entity registry (defaults to empty list)
+    device_registry — list of {"id": str, "name": str, "entry_type": str|None}
+                      dicts for the device registry (defaults to empty list)
     """
     supervisor = AsyncMock()
-    supervisor._get_core = AsyncMock(return_value=states)
+
+    def _get_core_side_effect(path):
+        if path == "/states":
+            return states
+        if path == "/config/device_registry/list":
+            return device_registry or []
+        return []
+
+    supervisor._get_core = AsyncMock(side_effect=_get_core_side_effect)
     supervisor.get_history = AsyncMock(
         side_effect=lambda eid, hours: history_map.get(eid, [])
     )
@@ -246,6 +256,28 @@ class TestCompanionAppExclusion:
         assert correlated == [], (
             f"Expected no correlated dropout when only phone sensors drop, got: {correlated}"
         )
+
+    def test_service_type_device_excluded_from_correlated(self):
+        """entry_type='service' device excluded even when not in COMPANION_INTEGRATIONS."""
+        # 'some_new_app' is not in COMPANION_INTEGRATIONS — only entry_type saves us
+        registry = [
+            {"entity_id": f"sensor.new_app_{i}", "platform": "some_new_app",
+             "device_id": "dev-svc"}
+            for i in range(5)
+        ]
+        device_registry = [{"id": "dev-svc", "name": "New App", "entry_type": "service"}]
+        states = [{"entity_id": f"sensor.new_app_{i}"} for i in range(5)]
+        history_map = {
+            f"sensor.new_app_{i}": [
+                {"entity_id": f"sensor.new_app_{i}", "state": "unavailable", "when": _ts(1, i)}
+                for _ in range(3)
+            ]
+            for i in range(5)
+        }
+        supervisor = _make_supervisor(states, history_map, registry, device_registry)
+        issues = _run(check_correlated_dropouts(supervisor))
+        correlated = [i for i in issues if i.get("id", "").startswith("correlated_")]
+        assert correlated == [], "service-type entities should not produce correlated issues"
 
     def test_registry_failure_falls_back_gracefully(self):
         """
