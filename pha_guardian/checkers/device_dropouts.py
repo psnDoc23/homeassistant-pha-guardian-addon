@@ -15,16 +15,23 @@ COMPANION_INTEGRATIONS = frozenset({
 })
 
 
-async def _get_companion_entity_ids(supervisor) -> frozenset:
+async def _get_device_info(supervisor) -> tuple:
     """
-    Return entity IDs that belong to companion-app integrations (mobile_app,
-    ios, etc.).  These sensors go unavailable when a phone leaves home — not
-    because of a hardware or network fault — so they must be excluded from
-    dropout detection.
+    Returns a 3-tuple:
+      companion_ids   — frozenset of entity IDs belonging to companion-app
+                        integrations (mobile_app, ios). These go unavailable
+                        when a phone leaves home and must be skipped.
+      entity_to_device — dict mapping entity_id -> device_id (str or None).
+      device_names    — dict mapping device_id -> human-readable device name.
 
-    Falls back to an empty frozenset on any error so the checker keeps working
-    even when the entity registry endpoint is unavailable.
+    All three fall back gracefully so the checker keeps working even when
+    the entity registry or device registry endpoint is unavailable.
     """
+    companion_ids = frozenset()
+    entity_to_device = {}
+    device_names = {}
+
+    # --- Entity registry: companion filtering + entity→device mapping ---
     try:
         raw = await supervisor.get_entity_registry()
         if isinstance(raw, dict):
@@ -38,26 +45,70 @@ async def _get_companion_entity_ids(supervisor) -> frozenset:
             registry = raw
         else:
             registry = []
-        return frozenset(
+
+        companion_ids = frozenset(
             entry["entity_id"]
             for entry in registry
             if isinstance(entry, dict)
             and entry.get("platform") in COMPANION_INTEGRATIONS
             and entry.get("entity_id")
         )
+        entity_to_device = {
+            entry["entity_id"]: entry.get("device_id")
+            for entry in registry
+            if isinstance(entry, dict) and entry.get("entity_id")
+        }
     except Exception:
-        return frozenset()
+        pass
+
+    # --- Device registry: device_id → friendly name ---
+    try:
+        raw_devices = await supervisor._get_core("/config/device_registry/list")
+        if isinstance(raw_devices, dict):
+            devices = (
+                raw_devices.get("result")
+                or raw_devices.get("devices")
+                or raw_devices.get("data")
+                or []
+            )
+        elif isinstance(raw_devices, list):
+            devices = raw_devices
+        else:
+            devices = []
+
+        for dev in devices:
+            if not isinstance(dev, dict):
+                continue
+            dev_id = dev.get("id")
+            if not dev_id:
+                continue
+            # Prefer user-assigned name, then integration name, then model
+            name = (
+                dev.get("name_by_user")
+                or dev.get("name")
+                or dev.get("model")
+                or dev_id
+            )
+            device_names[dev_id] = name
+    except Exception:
+        pass
+
+    return companion_ids, entity_to_device, device_names
 
 
 async def check_device_dropouts(supervisor) -> list:
     """
-    Scans all physical (non-group) entities for repeated unavailability
-    in the last 48 hours. Returns one issue per affected device, including
-    a timestamped events array for each dropout interval.
+    Scans all physical (non-group) entities for repeated unavailability in the
+    last 48 hours.
+
+    Entities that share the same HA device_id are grouped into a single issue
+    so that a speaker with a "Loudness" and a "Crossfade" switch produces one
+    card, not two.  Entities with no device_id (orphaned/template entities)
+    fall back to per-entity issues.
 
     Companion-app entities (mobile_app / ios) are excluded before history is
     fetched: phone sensors going unavailable when someone leaves home are not
-    hardware dropouts and must not surface as individual device issues.
+    hardware dropouts and must not surface as device issues.
     """
     issues = []
 
@@ -72,14 +123,17 @@ async def check_device_dropouts(supervisor) -> list:
             "fixable": False,
         }]
 
-    # Fetch companion-app entity IDs to exclude from dropout detection.
-    companion_ids = await _get_companion_entity_ids(supervisor)
+    companion_ids, entity_to_device, device_names = await _get_device_info(supervisor)
 
     # Filter to physical entities only — skip groups, areas, and companion-app sensors
     candidates = [
         s for s in states
         if _is_physical_entity(s.get("entity_id", ""), companion_ids)
     ]
+
+    # --- Per-entity dropout scan ---
+    # Collect results keyed by entity_id before grouping.
+    entity_results = {}   # entity_id -> {count, events, friendly_name}
 
     for state in candidates:
         entity_id = state.get("entity_id")
@@ -93,26 +147,85 @@ async def check_device_dropouts(supervisor) -> list:
             dropout_count = len(events)
 
             if dropout_count >= DROPOUT_THRESHOLD:
-                friendly_name = state.get("attributes", {}).get("friendly_name", entity_id)
-                issues.append({
-                    "id": f"dropout_{entity_id}",
-                    "title": f"Device dropout detected: {friendly_name}",
-                    "detail": (
-                        f"{entity_id} went unavailable {dropout_count} time(s) "
-                        f"in the last {HOURS_TO_CHECK} hours."
-                    ),
-                    "severity": "high" if dropout_count >= 5 else "medium",
-                    "suggestion": (
-                        "This device is repeatedly losing connection. "
-                        "Check its power source, signal strength, and distance from the hub. "
-                        "If it's a Zigbee device, consider adding a repeater nearby."
-                    ),
-                    "fixable": False,
+                entity_results[entity_id] = {
+                    "count": dropout_count,
                     "events": events,
-                })
+                    "friendly_name": state.get("attributes", {}).get(
+                        "friendly_name", entity_id
+                    ),
+                }
         except Exception:
-            # Skip entities we can't check — don't let one bad entity break the whole scan
+            # Skip entities we can't check — don't let one bad entity break the scan
             continue
+
+    # --- Group by device_id ---
+    # Entities sharing a device_id collapse into one issue.
+    # Entities with no device_id are reported individually (orphan path).
+    device_groups = {}   # device_id -> list of (entity_id, result_dict)
+    orphans = []         # (entity_id, result_dict) with no device_id
+
+    for entity_id, result in entity_results.items():
+        device_id = entity_to_device.get(entity_id)
+        if device_id:
+            device_groups.setdefault(device_id, []).append((entity_id, result))
+        else:
+            orphans.append((entity_id, result))
+
+    # --- Emit one issue per device group ---
+    for device_id, members in device_groups.items():
+        max_count = max(r["count"] for _, r in members)
+        # Use the entity with the most dropouts as the representative for events
+        primary_eid, primary_result = max(members, key=lambda m: m[1]["count"])
+        entity_ids = [eid for eid, _ in members]
+        device_name = device_names.get(device_id) or primary_result["friendly_name"]
+
+        if len(members) == 1:
+            detail = (
+                f"{primary_eid} went unavailable {primary_result['count']} time(s) "
+                f"in the last {HOURS_TO_CHECK} hours."
+            )
+        else:
+            detail = (
+                f"{len(members)} entities went unavailable up to {max_count} time(s) "
+                f"in the last {HOURS_TO_CHECK} hours."
+            )
+
+        issues.append({
+            "id": f"dropout_device_{device_id}",
+            "title": f"Device dropout detected: {device_name}",
+            "detail": detail,
+            "severity": "high" if max_count >= 5 else "medium",
+            "suggestion": (
+                "This device is repeatedly losing connection. "
+                "Check its power source, signal strength, and distance from the hub. "
+                "If it's a Zigbee device, consider adding a repeater nearby."
+            ),
+            "fixable": False,
+            "events": primary_result["events"],
+            "entity_ids": entity_ids,
+            "dropout_count": max_count,
+        })
+
+    # --- Emit per-entity issues for orphaned entities (no device_id) ---
+    for entity_id, result in orphans:
+        issues.append({
+            "id": f"dropout_{entity_id}",
+            "title": f"Device dropout detected: {result['friendly_name']}",
+            "detail": (
+                f"{entity_id} went unavailable {result['count']} time(s) "
+                f"in the last {HOURS_TO_CHECK} hours."
+            ),
+            "severity": "high" if result["count"] >= 5 else "medium",
+            "suggestion": (
+                "This device is repeatedly losing connection. "
+                "Check its power source, signal strength, and distance from the hub. "
+                "If it's a Zigbee device, consider adding a repeater nearby."
+            ),
+            "fixable": False,
+            "events": result["events"],
+            "entity_ids": [entity_id],
+            "dropout_count": result["count"],
+        })
 
     return issues
 
