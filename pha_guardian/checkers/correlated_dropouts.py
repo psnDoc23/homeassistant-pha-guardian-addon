@@ -41,82 +41,24 @@ async def _get_companion_entity_ids(supervisor) -> frozenset:
     because their unavailability reflects a software/virtual event (phone leaving
     home, cloud service restarting) rather than a hardware or network fault.
 
-    Two complementary strategies are used so neither alone is a single point of
-    failure:
+    Uses HA's integration_entities() template function — works on all HA versions
+    without needing the entity/device registry REST endpoints (which are not always
+    exposed through the Supervisor proxy).
 
-    1. Integration-name allowlist (COMPANION_INTEGRATIONS) — catches entities
-       that have no device_id but belong to a known companion platform.
-    2. Device registry entry_type="service" — catches any virtual/software
-       integration automatically, including future ones we haven't hardcoded.
-       Physical hardware devices always have entry_type=None in HA.
-
-    Falls back to an empty frozenset on any error so the checker keeps working
-    even when a registry endpoint is unavailable.
+    Falls back to an empty frozenset on any error so the checker keeps working.
     """
-    # --- Entity registry: integration-name exclusions + entity→device mapping ---
-    integration_excluded = frozenset()
-    entity_to_device = {}
     try:
-        raw = await supervisor.get_entity_registry()
-        if isinstance(raw, dict):
-            registry = (
-                raw.get("result")
-                or raw.get("entity_registry")
-                or raw.get("data")
-                or []
-            )
-        elif isinstance(raw, list):
-            registry = raw
-        else:
-            registry = []
-
-        integration_excluded = frozenset(
-            entry["entity_id"]
-            for entry in registry
-            if isinstance(entry, dict)
-            and entry.get("platform") in COMPANION_INTEGRATIONS
-            and entry.get("entity_id")
+        template = (
+            "{%- set mobile = integration_entities('mobile_app') | list -%}"
+            "{%- set ios = integration_entities('ios') | list -%}"
+            "{{ (mobile + ios) | tojson }}"
         )
-        entity_to_device = {
-            entry["entity_id"]: entry.get("device_id")
-            for entry in registry
-            if isinstance(entry, dict) and entry.get("entity_id")
-        }
+        text = await supervisor._post_core_text("/template", {"template": template})
+        import json as _json
+        ids = _json.loads(text)
+        return frozenset(ids) if isinstance(ids, list) else frozenset()
     except Exception:
-        pass
-
-    # --- Device registry: entry_type="service" exclusions ---
-    service_entity_ids = frozenset()
-    try:
-        raw_devices = await supervisor._get_core("/config/device_registry/list")
-        if isinstance(raw_devices, dict):
-            devices = (
-                raw_devices.get("result")
-                or raw_devices.get("devices")
-                or raw_devices.get("data")
-                or []
-            )
-        elif isinstance(raw_devices, list):
-            devices = raw_devices
-        else:
-            devices = []
-
-        service_device_ids = frozenset(
-            dev["id"]
-            for dev in devices
-            if isinstance(dev, dict)
-            and dev.get("id")
-            and dev.get("entry_type") == "service"
-        )
-        service_entity_ids = frozenset(
-            entity_id
-            for entity_id, device_id in entity_to_device.items()
-            if device_id in service_device_ids
-        )
-    except Exception:
-        pass
-
-    return integration_excluded | service_entity_ids
+        return frozenset()
 
 
 async def check_correlated_dropouts(supervisor, ha_timezone: str | None = None) -> list:
