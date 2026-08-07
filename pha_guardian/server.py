@@ -58,7 +58,7 @@ PROPHETDATA_PUSH_URL = os.environ.get(
 
 
 
-async def push_to_prophetdata(issues: list, device_registry: dict = None, ha_timezone: str = None):
+async def push_to_prophetdata(issues: list, device_registry: dict = None, ha_timezone: str = None, registry_debug: dict = None):
     if not API_TOKEN:
         logger.info("Push skipped -- no API token configured")
         return
@@ -68,6 +68,8 @@ async def push_to_prophetdata(issues: list, device_registry: dict = None, ha_tim
             payload["device_registry"] = device_registry
         if ha_timezone:
             payload["ha_timezone"] = ha_timezone
+        if registry_debug is not None:
+            payload["_registry_debug"] = registry_debug
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.post(
                 PROPHETDATA_PUSH_URL,
@@ -144,7 +146,34 @@ async def background_polling():
                 logger.warning(f"Device classification failed, pushing without registry: {e}")
                 device_registry = None
 
-            await push_to_prophetdata(all_issues, device_registry, ha_timezone=ha_timezone)
+            # --- TEMPORARY DIAGNOSTIC (remove after confirming entity registry format) ---
+            # Captures the raw entity registry response structure so we can verify
+            # whether device_id is present — needed to debug device grouping.
+            _reg_debug = None
+            try:
+                _raw_reg = await supervisor.get_entity_registry()
+                if isinstance(_raw_reg, list):
+                    _first = _raw_reg[0] if _raw_reg else {}
+                    _reg_debug = {
+                        "response_type": "list",
+                        "entry_count": len(_raw_reg),
+                        "first_entry_keys": list(_first.keys()),
+                        "first_entry": {k: v for k, v in _first.items()
+                                        if k in ("entity_id", "platform", "device_id", "config_entry_id")},
+                    }
+                elif isinstance(_raw_reg, dict):
+                    _reg_debug = {
+                        "response_type": "dict",
+                        "top_level_keys": list(_raw_reg.keys())[:10],
+                    }
+                else:
+                    _reg_debug = {"response_type": str(type(_raw_reg))}
+            except Exception as _e:
+                _reg_debug = {"error": str(_e)}
+            # --- END TEMPORARY DIAGNOSTIC ---
+
+            await push_to_prophetdata(all_issues, device_registry, ha_timezone=ha_timezone,
+                                      registry_debug=_reg_debug)
 
         except Exception as e:
             logger.error(f"Background poll error: {e}")
