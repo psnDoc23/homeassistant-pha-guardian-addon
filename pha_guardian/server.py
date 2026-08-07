@@ -127,7 +127,7 @@ async def run_checks(ha_timezone: str | None = None) -> list:
 
 async def background_polling():
     while True:
-        await asyncio.sleep(60)
+        await asyncio.sleep(120)
         try:
             ha_timezone = await get_ha_timezone()
             all_issues = await run_checks(ha_timezone=ha_timezone)
