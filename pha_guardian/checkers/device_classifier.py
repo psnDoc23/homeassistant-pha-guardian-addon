@@ -161,6 +161,7 @@ async def classify_devices(supervisor) -> dict:
             }
             result = _build_result_from_platform_map(platform_map)
             _log_summary(result, source="REST")
+            await _enrich_with_friendly_names(supervisor, result)
             return result
         else:
             logger.info("Entity registry (REST) returned 0 entries — trying template fallback")
@@ -179,11 +180,34 @@ async def classify_devices(supervisor) -> dict:
                     f"across {len(known_integrations)} known integrations")
         result = _build_result_from_platform_map(platform_map)
         _log_summary(result, source="template")
+        await _enrich_with_friendly_names(supervisor, result)
         return result
 
     except Exception as e:
         logger.error(f"Entity registry (template) also failed: {type(e).__name__}: {e}")
         return {}
+
+
+async def _enrich_with_friendly_names(supervisor, result: dict) -> None:
+    """
+    Fetch all HA states in one call and add 'friendly_name' to each entry in
+    *result* (in-place).  Failures are non-fatal — the key is simply omitted.
+    """
+    try:
+        states = await supervisor._get_core("/states")
+        if not isinstance(states, list):
+            return
+        friendly_map = {
+            s["entity_id"]: s.get("attributes", {}).get("friendly_name", "")
+            for s in states
+            if isinstance(s, dict) and s.get("entity_id")
+        }
+        for entity_id, info in result.items():
+            info["friendly_name"] = friendly_map.get(entity_id, "")
+        logger.info(f"Friendly names enriched for {len(result)} entities "
+                    f"({sum(1 for v in result.values() if v.get('friendly_name'))} with names set)")
+    except Exception as e:
+        logger.warning(f"Could not enrich friendly names: {type(e).__name__}: {e}")
 
 
 def _log_summary(result: dict, source: str):
