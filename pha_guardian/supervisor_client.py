@@ -3,13 +3,30 @@ import os
 import httpx
 from logging import getLogger
 import re
+from urllib.parse import urlparse
 
 
 logger = getLogger(__name__)
 
 class SupervisorClient:
     def __init__(self):
-        self.base_url = "http://supervisor"
+        dev_mode = os.environ.get("DEV_MODE", "false").lower() == "true"
+        configured_url = os.environ.get("SUPERVISOR_BASE_URL")
+        if dev_mode:
+            self.base_url = (configured_url or "http://127.0.0.1:8099").rstrip("/")
+            hostname = urlparse(self.base_url).hostname
+            if hostname not in {"127.0.0.1", "localhost", "::1"}:
+                raise RuntimeError(
+                    "DEV_MODE requires a loopback SUPERVISOR_BASE_URL so real "
+                    "Home Assistant data cannot be mixed with preview scenarios."
+                )
+        else:
+            self.base_url = (configured_url or "http://supervisor").rstrip("/")
+            hostname = urlparse(self.base_url).hostname
+            if configured_url and hostname in {"127.0.0.1", "localhost", "::1"}:
+                raise RuntimeError(
+                    "Production mode cannot use the Guardian development mock."
+                )
         self.client = httpx.AsyncClient(timeout=10.0)
 
     @property

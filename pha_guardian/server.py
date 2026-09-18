@@ -1,12 +1,14 @@
 # server.py
 import os
-from fastapi import FastAPI, Request, Body
+from pathlib import Path
+from fastapi import FastAPI, Request, Body, HTTPException
 from fastapi.responses import JSONResponse
 
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-templates = Jinja2Templates(directory="/app/templates")
+templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+DEV_MODE = os.environ.get("DEV_MODE", "false").lower() == "true"
 
 import httpx
 
@@ -31,13 +33,18 @@ logger = setup_logging()
 API_TOKEN = os.environ.get("API_TOKEN", "")
 
 async def verify_token(request: Request, call_next):
+    if DEV_MODE:
+        return await call_next(request)
+
     # Always allow the dashboard and health check through
     if request.url.path in ("/", "/health"):
         return await call_next(request)
 
     if not API_TOKEN:
-        # Token not configured -- pass through (local-only mode)
-        return await call_next(request)
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Guardian API token is not configured"},
+        )
 
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer ") or auth[len("Bearer "):] != API_TOKEN:
@@ -109,7 +116,11 @@ async def run_checks(ha_timezone: str | None = None) -> list:
     all_issues += await check_device_dropouts(supervisor)
     all_issues += await check_correlated_dropouts(supervisor, ha_timezone=ha_timezone)
 
-    monitored_ids = load_monitored_ids()
+    if DEV_MODE:
+        from mock_supervisor import get_dev_monitored_ids
+        monitored_ids = get_dev_monitored_ids()
+    else:
+        monitored_ids = load_monitored_ids()
     if monitored_ids:
         automation_configs = []
         for aid in monitored_ids:
@@ -164,8 +175,6 @@ app.add_middleware(BaseHTTPMiddleware, dispatch=verify_token)
 
 
 
-# determine whether in dev mode or not
-DEV_MODE = os.environ.get("DEV_MODE", "false").lower() == "true"
 logger.info(f"DEV_MODE: {DEV_MODE}")
 
 
@@ -178,17 +187,24 @@ else:
     logger.info("Production mode -- using real Supervisor")
 
 
+def ensure_dev_mode():
+    if not DEV_MODE:
+        raise HTTPException(status_code=404, detail="Not found")
+
+
 
 @app.get("/debug/ingress")
 async def debug_ingress(request: Request):
+    ensure_dev_mode()
     return {
         "x_ingress_path": request.headers.get("x-ingress-path", "NOT FOUND"),
-        "headers": dict(request.headers)
+        "authorization_present": bool(request.headers.get("authorization")),
     }
 
 
 @app.get("/debug/history/{entity_id}")
 async def debug_history(entity_id: str):
+    ensure_dev_mode()
     try:
         entries = await supervisor.get_history(entity_id, hours=24)
         states = [e.get("state") for e in entries]
@@ -204,6 +220,7 @@ async def debug_history(entity_id: str):
     
 @app.get("/debug/raw-history/{entity_id}")
 async def debug_raw_history(entity_id: str):
+    ensure_dev_mode()
     try:
         from datetime import datetime, timezone, timedelta
         start = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
@@ -254,7 +271,8 @@ async def dashboard(request: Request):
     ingress_path = request.headers.get("x-ingress-path", "")
     return templates.TemplateResponse(request, "dashboard.html", {
         "ingress_path": ingress_path,
-        "api_token": API_TOKEN
+        "api_token": API_TOKEN,
+        "dev_mode": DEV_MODE,
     })
 
 
@@ -263,15 +281,18 @@ async def dashboard(request: Request):
 # ---------------------------
 @app.get("/debug/env")
 async def debug_env():
+    ensure_dev_mode()
     return {
-        "SUPERVISOR_TOKEN": os.environ.get("SUPERVISOR_TOKEN", "MISSING"),
-        "HASSIO_TOKEN": os.environ.get("HASSIO_TOKEN", "MISSING"),
-        "GUARDIAN_IP": os.environ.get("GUARDIAN_IP", "MISSING"),
+        "supervisor_token_present": bool(os.environ.get("SUPERVISOR_TOKEN")),
+        "hassio_token_present": bool(os.environ.get("HASSIO_TOKEN")),
+        "guardian_ip_present": bool(os.environ.get("GUARDIAN_IP")),
+        "dev_mode": DEV_MODE,
     }
 
 
 @app.get("/debug/host-info")
 async def debug_host_info():
+    ensure_dev_mode()
     return await supervisor._get("/host/info")
 
 
@@ -287,6 +308,9 @@ async def automation_candidates():
 @app.get("/automations/monitored")
 async def get_monitored():
     from storage import load_monitored_ids
+    if DEV_MODE:
+        from mock_supervisor import get_dev_monitored_ids
+        return {"monitored_automation_ids": get_dev_monitored_ids()}
     return {"monitored_automation_ids": load_monitored_ids()}
 
 
@@ -294,7 +318,11 @@ async def get_monitored():
 async def set_monitored(payload: dict):
     from storage import save_monitored_ids
     ids = payload.get("monitored_automation_ids", [])
-    save_monitored_ids(ids)
+    if DEV_MODE:
+        from mock_supervisor import set_dev_monitored_ids
+        set_dev_monitored_ids(ids)
+    else:
+        save_monitored_ids(ids)
     return {"status": "ok", "monitored_automation_ids": ids}
 
 
@@ -353,7 +381,11 @@ async def issues():
     all_issues += await check_correlated_dropouts(supervisor)
     
 
-    monitored_ids = load_monitored_ids()
+    if DEV_MODE:
+        from mock_supervisor import get_dev_monitored_ids
+        monitored_ids = get_dev_monitored_ids()
+    else:
+        monitored_ids = load_monitored_ids()
     if monitored_ids:
         automation_configs = []
         for aid in monitored_ids:

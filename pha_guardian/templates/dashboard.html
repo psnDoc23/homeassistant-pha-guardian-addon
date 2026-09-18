@@ -160,10 +160,45 @@
             font-size: 0.9em;
             padding: 8px 0;
         }
+        .dev-toolbar {
+            background: #fff8db;
+            border: 1px solid #ead78f;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+        }
+        .dev-toolbar label {
+            display: block;
+            font-size: 0.78em;
+            font-weight: bold;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #74601e;
+            margin-bottom: 6px;
+        }
+        .dev-toolbar select {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid #c9b867;
+            border-radius: 5px;
+            background: white;
+        }
+        .dev-description {
+            color: #74601e;
+            font-size: 0.85em;
+            margin-top: 7px;
+        }
     </style>
 </head>
 <body>
     <h1>🛡️ PHA Guardian</h1>
+    {% if dev_mode %}
+    <div class="dev-toolbar">
+        <label for="scenario-select">Development scenario</label>
+        <select id="scenario-select" onchange="selectScenario(this.value)"></select>
+        <div class="dev-description" id="scenario-description"></div>
+    </div>
+    {% endif %}
     <div id="summary">Loading...</div>
     <div id="issues-list"></div>
 
@@ -181,6 +216,41 @@
         const dismissed = new Set();
         let candidates = [];
         let monitored = new Set();
+
+        async function loadScenarios() {
+            const select = document.getElementById('scenario-select');
+            if (!select) return;
+            const res = await fetch(BASE_PATH + '/dev/scenarios', {
+                headers: { "Authorization": `Bearer ${API_TOKEN}` }
+            });
+            const data = await res.json();
+            select.innerHTML = '';
+            data.scenarios.forEach(scenario => {
+                const option = document.createElement('option');
+                option.value = scenario.id;
+                option.textContent = scenario.label;
+                option.selected = scenario.id === data.current;
+                option.dataset.description = scenario.description;
+                select.appendChild(option);
+            });
+            updateScenarioDescription();
+        }
+
+        function updateScenarioDescription() {
+            const select = document.getElementById('scenario-select');
+            const description = document.getElementById('scenario-description');
+            if (!select || !description) return;
+            description.textContent = select.selectedOptions[0]?.dataset.description || '';
+        }
+
+        async function selectScenario(scenarioId) {
+            await fetch(BASE_PATH + `/dev/scenarios/${scenarioId}`, {
+                method: 'POST',
+                headers: { "Authorization": `Bearer ${API_TOKEN}` }
+            });
+            updateScenarioDescription();
+            await Promise.all([loadIssues(), loadAutomations()]);
+        }
 
         async function loadIssues() {
             const res = await fetch(BASE_PATH + '/issues', {
@@ -314,6 +384,7 @@
             loadIssues();
         }
 
+        loadScenarios();
         loadIssues();
         loadAutomations();
     </script>

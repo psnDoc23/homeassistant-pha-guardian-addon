@@ -2,20 +2,13 @@
 
 from datetime import datetime, timezone, timedelta
 
+from .ha_metadata import get_excluded_entity_ids
+
 HOURS_TO_CHECK = 48
 WINDOW_MINUTES = 3          # devices dropping within this window are "correlated"
 MIN_DEVICES_IN_WINDOW = 3   # need at least this many to flag a correlated event
 PHYSICAL_DOMAINS = ["light", "switch", "binary_sensor", "sensor"]
 BUCKET_MINUTES = 10         # floor window_start to this many minutes for stable IDs
-
-# Integrations whose entities go unavailable for non-hardware reasons
-# (phone leaves home, app disconnects, etc.) and must be excluded from
-# dropout detection to avoid false correlated-dropout alerts.
-COMPANION_INTEGRATIONS = frozenset({
-    "mobile_app",  # HA companion app (iOS and Android)
-    "ios",         # legacy iOS integration
-})
-
 
 def _format_local(dt: datetime, ha_timezone: str | None) -> str:
     """Format a datetime in the HA local timezone, falling back to UTC."""
@@ -33,32 +26,6 @@ def _format_local(dt: datetime, ha_timezone: str | None) -> str:
     # Fallback: display UTC explicitly
     utc_dt = dt.astimezone(timezone.utc)
     return utc_dt.strftime('%Y-%m-%d %-I:%M %p UTC').replace('AM', 'am').replace('PM', 'pm')
-
-
-async def _get_companion_entity_ids(supervisor) -> frozenset:
-    """
-    Return entity IDs that should be excluded from correlated dropout detection
-    because their unavailability reflects a software/virtual event (phone leaving
-    home, cloud service restarting) rather than a hardware or network fault.
-
-    Uses HA's integration_entities() template function — works on all HA versions
-    without needing the entity/device registry REST endpoints (which are not always
-    exposed through the Supervisor proxy).
-
-    Falls back to an empty frozenset on any error so the checker keeps working.
-    """
-    try:
-        template = (
-            "{%- set mobile = integration_entities('mobile_app') | list -%}"
-            "{%- set ios = integration_entities('ios') | list -%}"
-            "{{ (mobile + ios) | tojson }}"
-        )
-        text = await supervisor._post_core_text("/template", {"template": template})
-        import json as _json
-        ids = _json.loads(text)
-        return frozenset(ids) if isinstance(ids, list) else frozenset()
-    except Exception:
-        return frozenset()
 
 
 async def check_correlated_dropouts(supervisor, ha_timezone: str | None = None) -> list:
@@ -93,11 +60,11 @@ async def check_correlated_dropouts(supervisor, ha_timezone: str | None = None) 
         }]
 
     # Fetch companion-app entity IDs to exclude from dropout detection.
-    companion_ids = await _get_companion_entity_ids(supervisor)
+    excluded_ids = await get_excluded_entity_ids(supervisor)
 
     candidates = [
         s for s in states
-        if _is_physical_entity(s.get("entity_id", ""), companion_ids)
+        if _is_physical_entity(s.get("entity_id", ""), excluded_ids)
     ]
 
     # Collect every (timestamp, entity_id) where a device went unavailable

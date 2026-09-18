@@ -21,7 +21,7 @@ ingress_port: 8099
 panel_icon: mdi:shield-home
 panel_title: PHA Guardian
 ports:
-  8099/tcp: 8099
+  8099/tcp: null
 ports_description:
   8099/tcp: "Guardian API Port"
 map:

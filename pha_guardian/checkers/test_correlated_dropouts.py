@@ -53,7 +53,7 @@ def _make_supervisor(states, history_map, registry=None, device_registry=None):
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 # ---------------------------------------------------------------------------

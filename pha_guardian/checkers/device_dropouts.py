@@ -2,106 +2,14 @@
 
 from datetime import datetime, timezone
 
+from .ha_metadata import (
+    get_entity_device_mapping,
+    get_excluded_entity_ids,
+)
+
 DROPOUT_THRESHOLD = 5 # minimum dropouts in window to raise an issue
 HOURS_TO_CHECK = 48
 PHYSICAL_DOMAINS = ["light", "switch", "binary_sensor", "sensor"]
-
-# Integrations whose entities go unavailable for non-hardware reasons
-# (phone leaves home, app disconnects, etc.) and must be excluded from
-# dropout detection to avoid false alerts.
-COMPANION_INTEGRATIONS = frozenset({
-    "mobile_app",  # HA companion app (iOS and Android)
-    "ios",         # legacy iOS integration
-})
-
-
-async def _get_companion_ids(supervisor) -> frozenset:
-    """
-    Returns frozenset of entity IDs belonging to companion-app integrations
-    (mobile_app, ios). Uses HA's integration_entities() template function —
-    works on all HA versions without needing the entity registry REST endpoint.
-    Falls back to empty set on any error.
-    """
-    try:
-        template = (
-            "{%- set mobile = integration_entities('mobile_app') | list -%}"
-            "{%- set ios = integration_entities('ios') | list -%}"
-            "{{ (mobile + ios) | tojson }}"
-        )
-        text = await supervisor._post_core_text("/template", {"template": template})
-        ids = __import__("json").loads(text)
-        return frozenset(ids) if isinstance(ids, list) else frozenset()
-    except Exception:
-        return frozenset()
-
-
-async def _get_entity_device_mapping(supervisor, entity_ids: list) -> tuple:
-    """
-    Given a list of entity_ids (only those that crossed the dropout threshold),
-    returns:
-      entity_to_device — dict  entity_id -> device_id (str) or None
-      device_names     — dict  device_id -> human-readable name
-
-    Uses HA's device_id() and device_attr() template functions — available in
-    all HA versions >= 2021.6, and accessible without the entity/device registry
-    REST endpoints which are not always exposed through the Supervisor proxy.
-
-    Falls back gracefully: if the call fails, all entities are treated as orphans
-    (one card per entity, same behaviour as the old code).
-    """
-    import json as _json
-
-    entity_to_device: dict = {}
-    device_names: dict = {}
-
-    if not entity_ids:
-        return entity_to_device, device_names
-
-    # Step 1: entity_id → device_id
-    try:
-        eids_json = _json.dumps(entity_ids)
-        template = (
-            "{%- set entities = " + eids_json + " -%}"
-            "{%- set ns = namespace(result={}) -%}"
-            "{%- for eid in entities -%}"
-            "  {%- set did = device_id(eid) -%}"
-            "  {%- set ns.result = dict(ns.result, **{eid: did | default('', true)}) -%}"
-            "{%- endfor -%}"
-            "{{ ns.result | tojson }}"
-        )
-        text = await supervisor._post_core_text("/template", {"template": template})
-        raw_map = _json.loads(text)
-        if isinstance(raw_map, dict):
-            # Empty string from the template means "no device" — normalise to None
-            entity_to_device = {k: (v or None) for k, v in raw_map.items()}
-    except Exception:
-        return entity_to_device, device_names
-
-    # Step 2: unique device_ids → friendly names
-    unique_device_ids = list({v for v in entity_to_device.values() if v})
-    if not unique_device_ids:
-        return entity_to_device, device_names
-
-    try:
-        dids_json = _json.dumps(unique_device_ids)
-        template = (
-            "{%- set device_ids = " + dids_json + " -%}"
-            "{%- set ns = namespace(result={}) -%}"
-            "{%- for did in device_ids -%}"
-            "  {%- set name = device_attr(did, 'name_by_user') or device_attr(did, 'name') or did -%}"
-            "  {%- set ns.result = dict(ns.result, **{did: name | string}) -%}"
-            "{%- endfor -%}"
-            "{{ ns.result | tojson }}"
-        )
-        text = await supervisor._post_core_text("/template", {"template": template})
-        raw_names = _json.loads(text)
-        if isinstance(raw_names, dict):
-            device_names = raw_names
-    except Exception:
-        pass
-
-    return entity_to_device, device_names
-
 
 async def check_device_dropouts(supervisor) -> list:
     """
@@ -130,12 +38,12 @@ async def check_device_dropouts(supervisor) -> list:
             "fixable": False,
         }]
 
-    companion_ids = await _get_companion_ids(supervisor)
+    excluded_ids = await get_excluded_entity_ids(supervisor)
 
     # Filter to physical entities only — skip groups, areas, and companion-app sensors
     candidates = [
         s for s in states
-        if _is_physical_entity(s.get("entity_id", ""), companion_ids)
+        if _is_physical_entity(s.get("entity_id", ""), excluded_ids)
     ]
 
     # --- Per-entity dropout scan ---
@@ -168,7 +76,7 @@ async def check_device_dropouts(supervisor) -> list:
     # --- Resolve device_id and name for each entity that crossed the threshold ---
     # We only query devices for entities that actually have issues (small set),
     # which keeps the template call fast.
-    entity_to_device, device_names = await _get_entity_device_mapping(
+    entity_to_device, device_names = await get_entity_device_mapping(
         supervisor, list(entity_results.keys())
     )
 

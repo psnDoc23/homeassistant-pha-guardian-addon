@@ -71,7 +71,7 @@ def _make_supervisor(states, history_map, entity_registry=None, device_registry=
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 # ---------------------------------------------------------------------------
