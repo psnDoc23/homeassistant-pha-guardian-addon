@@ -48,7 +48,6 @@ async def verify_token(request: Request, call_next):
 
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer ") or auth[len("Bearer "):] != API_TOKEN:
-        from fastapi.responses import JSONResponse
         return JSONResponse(status_code=401, content={"error": "Unauthorized"})
 
     return await call_next(request)

@@ -27,9 +27,8 @@ def _request(url, method="GET", token=None):
         return response.status, json.loads(response.read().decode())
 
 
-def _start_server(dev_mode):
+def _start_server(dev_mode, token="test-api-token"):
     port = _free_port()
-    token = "test-api-token"
     env = os.environ.copy()
     env.update(
         {
@@ -137,6 +136,24 @@ def test_production_server_hides_development_routes_and_secret_values():
         with pytest.raises(urllib.error.HTTPError) as hidden_debug_route:
             _request(f"{base_url}/debug/env", token=token)
         assert hidden_debug_route.value.code == 404
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
+
+
+def test_production_server_without_token_returns_service_unavailable():
+    process, base_url, _ = _start_server(dev_mode=False, token="")
+    try:
+        with urllib.request.urlopen(f"{base_url}/", timeout=5) as response:
+            assert response.status == 200
+
+        for path in ("/issues", "/ha/automations/candidates", "/automations/monitored"):
+            with pytest.raises(urllib.error.HTTPError) as unavailable:
+                _request(f"{base_url}{path}")
+            assert unavailable.value.code == 503
+            assert json.load(unavailable.value) == {
+                "error": "Guardian API token is not configured"
+            }
     finally:
         process.terminate()
         process.wait(timeout=5)
