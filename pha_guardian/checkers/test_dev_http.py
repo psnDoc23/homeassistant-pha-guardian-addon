@@ -91,6 +91,7 @@ def test_all_preview_scenarios_through_real_http_server(development_server):
         "healthy": [],
         "device_dropout": ["dropout_device_device-kitchen"],
         "correlated_dropout": ["correlated_dropout_"],
+        "checks_cannot_finish": ["disk_space_check_failed"],
         "missed_automation": ["missed_automation_light.hallway"],
     }
 
@@ -141,19 +142,21 @@ def test_production_server_hides_development_routes_and_secret_values():
         process.wait(timeout=5)
 
 
-def test_production_server_without_token_returns_service_unavailable():
+def test_production_server_without_token_rejects_outside_callers_but_serves_screen():
     process, base_url, _ = _start_server(dev_mode=False, token="")
     try:
         with urllib.request.urlopen(f"{base_url}/", timeout=5) as response:
             assert response.status == 200
+            page = response.read().decode()
+        # The screen must never carry a secret, and never ask the browser to send one.
+        assert "Bearer" not in page
+        assert "api_token" not in page.lower()
 
         for path in ("/issues", "/ha/automations/candidates", "/automations/monitored"):
-            with pytest.raises(urllib.error.HTTPError) as unavailable:
+            with pytest.raises(urllib.error.HTTPError) as unauthorized:
                 _request(f"{base_url}{path}")
-            assert unavailable.value.code == 503
-            assert json.load(unavailable.value) == {
-                "error": "Guardian API token is not configured"
-            }
+            assert unauthorized.value.code == 401
+            assert json.load(unauthorized.value) == {"error": "Unauthorized"}
     finally:
         process.terminate()
         process.wait(timeout=5)

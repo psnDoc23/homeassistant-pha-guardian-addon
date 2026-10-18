@@ -1,5 +1,7 @@
 # server.py
+import hmac
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI, Request, Body, HTTPException
 from fastapi.responses import JSONResponse
@@ -23,34 +25,60 @@ import asyncio
 
 from checkers.device_dropouts import check_device_dropouts
 from checkers.device_classifier import classify_devices
+from check_report import CheckHistory, build_report
 
 
 
 logger = setup_logging()
 
 
-# --- Token auth middleware ---
+# --- Access control ---
+# The token is only for callers outside Home Assistant's own interface (for example
+# the website pulling data, or an HA webhook). People using Guardian from the Home
+# Assistant sidebar arrive through Ingress, which Home Assistant has already signed
+# them in for, so the screen works without any token.
 API_TOKEN = os.environ.get("API_TOKEN", "")
+INGRESS_PROXY_IP = "172.30.32.2"  # the only address Supervisor proxies Ingress from
+
+# Website sharing is off unless the user turns it on AND a token is configured.
+WEBSITE_SHARING_ENABLED = os.environ.get("WEBSITE_SHARING", "false").lower() == "true"
+
+
+def sharing_active() -> bool:
+    return WEBSITE_SHARING_ENABLED and bool(API_TOKEN)
+
+
+def sharing_state() -> str:
+    if not WEBSITE_SHARING_ENABLED:
+        return "off"
+    return "active" if API_TOKEN else "needs_connection"
+
+
+def is_ingress_request(request: Request) -> bool:
+    return bool(request.client) and request.client.host == INGRESS_PROXY_IP
+
+
+def has_valid_token(request: Request) -> bool:
+    if not API_TOKEN:
+        return False
+    auth = request.headers.get("Authorization", "")
+    return auth.startswith("Bearer ") and hmac.compare_digest(
+        auth[len("Bearer "):], API_TOKEN
+    )
+
 
 async def verify_token(request: Request, call_next):
     if DEV_MODE:
         return await call_next(request)
 
-    # Always allow the dashboard and health check through
+    # Always allow the dashboard shell and health check through
     if request.url.path in ("/", "/health"):
         return await call_next(request)
 
-    if not API_TOKEN:
-        return JSONResponse(
-            status_code=503,
-            content={"error": "Guardian API token is not configured"},
-        )
+    if is_ingress_request(request) or has_valid_token(request):
+        return await call_next(request)
 
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer ") or auth[len("Bearer "):] != API_TOKEN:
-        return JSONResponse(status_code=401, content={"error": "Unauthorized"})
-
-    return await call_next(request)
+    return JSONResponse(status_code=401, content={"error": "Unauthorized"})
 
 
 
@@ -64,10 +92,11 @@ PROPHETDATA_PUSH_URL = os.environ.get(
 
 
 
-async def push_to_prophetdata(issues: list, device_registry: dict = None, ha_timezone: str = None):
-    if not API_TOKEN:
-        logger.info("Push skipped -- no API token configured")
-        return
+async def push_to_prophetdata(issues: list, device_registry: dict = None, ha_timezone: str = None) -> bool:
+    """Send findings to the website. Returns True only if a push was attempted."""
+    if not sharing_active():
+        logger.info(f"Push skipped -- website sharing is {sharing_state()}")
+        return False
     try:
         payload = {"issues": issues}
         if device_registry:
@@ -81,8 +110,10 @@ async def push_to_prophetdata(issues: list, device_registry: dict = None, ha_tim
                 headers={"Authorization": f"Bearer {API_TOKEN}"}
             )
             logger.info(f"Push to prophetdata.net: status={response.status_code} body={response.text[:200]}")
+            return response.is_success
     except Exception as e:
         logger.error(f"Push to prophetdata.net failed: {type(e).__name__}: {repr(e)}")
+        return False
 
 
 
@@ -126,36 +157,62 @@ async def run_checks(ha_timezone: str | None = None) -> list:
             try:
                 config = await supervisor._get_core(f"/config/automation/config/{aid}")
                 automation_configs.append(config)
-            except Exception:
-                pass
+            except Exception as e:
+                # An automation we can't read is a check that didn't happen,
+                # not a check that passed.
+                logger.warning(f"Could not fetch automation config for ID: {aid}")
+                all_issues.append({
+                    "id": f"missed_automation_check_failed_{aid}",
+                    "title": f"Couldn't check automation {aid}",
+                    "severity": "unknown",
+                    "detail": str(e),
+                })
         all_issues += await check_missed_automations(supervisor, automation_configs)
 
     return all_issues
 
 
+check_history = CheckHistory()
+_check_lock = asyncio.Lock()
+
+
+async def perform_check() -> tuple[list, dict]:
+    """Run every check once and remember the outcome. One run at a time."""
+    async with _check_lock:
+        ha_timezone = await get_ha_timezone()
+        all_issues = await run_checks(ha_timezone=ha_timezone)
+        report = build_report(all_issues, datetime.now(timezone.utc))
+        check_history.record(report)
+        return all_issues, report
+
+
+async def share_with_website(all_issues: list) -> bool:
+    """Send results to the website, but only when the user has turned sharing on."""
+    if not sharing_active():
+        return False
+    ha_timezone = await get_ha_timezone()
+    try:
+        device_registry = await classify_devices(supervisor)
+    except Exception as e:
+        logger.warning(f"Device classification failed, pushing without registry: {e}")
+        device_registry = None
+    return await push_to_prophetdata(all_issues, device_registry, ha_timezone=ha_timezone)
 
 
 async def background_polling():
+    # First check shortly after start so the screen has a "last checked" time.
+    delay = 5
     while True:
-        await asyncio.sleep(120)
+        await asyncio.sleep(delay)
+        delay = 120
         try:
-            ha_timezone = await get_ha_timezone()
-            all_issues = await run_checks(ha_timezone=ha_timezone)
-
-            if all_issues:
-                logger.info(f"Background poll found {len(all_issues)} issue(s)")
-            else:
-                logger.info("Background poll: no issues found")
-
-            # Classify all devices and include in push payload
-            try:
-                device_registry = await classify_devices(supervisor)
-            except Exception as e:
-                logger.warning(f"Device classification failed, pushing without registry: {e}")
-                device_registry = None
-
-            await push_to_prophetdata(all_issues, device_registry, ha_timezone=ha_timezone)
-
+            all_issues, report = await perform_check()
+            logger.info(
+                f"Background poll: status={report['status']} "
+                f"findings={report['finding_count']} "
+                f"failed_checks={len(report['failed_checks'])}"
+            )
+            await share_with_website(all_issues)
         except Exception as e:
             logger.error(f"Background poll error: {e}")
 
@@ -244,18 +301,15 @@ async def trigger_check():
     """
     logger.info("On-demand trigger received -- running checks now")
     try:
-        ha_timezone = await get_ha_timezone()
-        all_issues = await run_checks(ha_timezone=ha_timezone)
-
-        try:
-            device_registry = await classify_devices(supervisor)
-        except Exception as e:
-            logger.warning(f"Device classification failed on trigger: {e}")
-            device_registry = None
-
-        await push_to_prophetdata(all_issues, device_registry, ha_timezone=ha_timezone)
-        logger.info(f"On-demand trigger complete -- {len(all_issues)} issue(s) pushed")
-        return {"status": "ok", "issues_found": len(all_issues)}
+        all_issues, report = await perform_check()
+        pushed = await share_with_website(all_issues)
+        logger.info(f"On-demand trigger complete -- {len(all_issues)} result(s), pushed={pushed}")
+        return {
+            "status": "ok",
+            "issues_found": len(all_issues),
+            "pushed": pushed,
+            "report": report,
+        }
     except Exception as e:
         logger.error(f"Trigger error: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
@@ -270,7 +324,6 @@ async def dashboard(request: Request):
     ingress_path = request.headers.get("x-ingress-path", "")
     return templates.TemplateResponse(request, "dashboard.html", {
         "ingress_path": ingress_path,
-        "api_token": API_TOKEN,
         "dev_mode": DEV_MODE,
     })
 
@@ -364,38 +417,19 @@ async def health():
 # ---------------------------
 @app.get("/issues")
 async def issues():
+    """Run every check now. Also used by the screen's "Check now" button.
+
+    `issues` keeps its original shape (findings plus any check that failed) so
+    existing callers keep working; `report` says whether the result can be trusted.
+    """
     logger.info({"event": "issues_requested"})
-    
-    from checkers.disk_space import check_disk_space
-    from checkers.usb_path import check_usb_path
-    from checkers.missed_automation import check_missed_automations
-    from checkers.device_dropouts import check_device_dropouts
-    from checkers.correlated_dropouts import check_correlated_dropouts
-    from storage import load_monitored_ids
-
-    all_issues = []
-    all_issues += await check_disk_space(supervisor)
-    all_issues += await check_usb_path(supervisor)
-    all_issues += await check_device_dropouts(supervisor)
-    all_issues += await check_correlated_dropouts(supervisor)
-    
-
-    if DEV_MODE:
-        from mock_supervisor import get_dev_monitored_ids
-        monitored_ids = get_dev_monitored_ids()
-    else:
-        monitored_ids = load_monitored_ids()
-    if monitored_ids:
-        automation_configs = []
-        for aid in monitored_ids:
-            try:
-                config = await supervisor._get_core(f"/config/automation/config/{aid}")
-                automation_configs.append(config)
-            except Exception:
-                logger.warning(f"Could not fetch automation config for ID: {aid}")
-        all_issues += await check_missed_automations(supervisor, automation_configs)
-
-    return {"issues": all_issues}
+    all_issues, report = await perform_check()
+    return {
+        "issues": all_issues,
+        "report": report,
+        "history": check_history.snapshot(),
+        "sharing": {"state": sharing_state()},
+    }
 
 
 

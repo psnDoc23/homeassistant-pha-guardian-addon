@@ -20,6 +20,9 @@ if bashio::config.has_value 'api_token'; then
     export API_TOKEN=$(bashio::config 'api_token')
 fi
 
+# Nothing is sent to the website unless the user switches this on.
+export WEBSITE_SHARING=$(bashio::config 'website_sharing')
+
 # Where to push detected issues (defaults to prophetdata.net in server.py if unset)
 if bashio::config.has_value 'push_url'; then
     export PROPHETDATA_PUSH_URL=$(bashio::config 'push_url')

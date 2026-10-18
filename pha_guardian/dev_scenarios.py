@@ -126,8 +126,16 @@ AUTOMATIONS = {
 }
 
 
-def _scenario(label, description, histories=None, monitored=None, disk_free=90):
+def _scenario(
+    label,
+    description,
+    histories=None,
+    monitored=None,
+    disk_free=90,
+    failing_paths=None,
+):
     return {
+        "failing_paths": list(failing_paths or []),
         "label": label,
         "description": description,
         "states": deepcopy(BASE_STATES),
@@ -184,6 +192,12 @@ SCENARIOS = {
             ],
         },
     ),
+    "checks_cannot_finish": _scenario(
+        "A check can't finish",
+        "Nothing is wrong that Guardian can see, but the disk-space check cannot "
+        "reach Home Assistant, so the result must not be called healthy.",
+        failing_paths=["/host/info"],
+    ),
     "missed_automation": _scenario(
         "Missed automation",
         "A monitored automation appears not to have completed.",
@@ -228,6 +242,8 @@ class ScenarioSupervisor:
         return self.store.current
 
     async def _get(self, path):
+        if path in self.data.get("failing_paths", []):
+            raise RuntimeError(f"Simulated failure reaching {path}")
         if path == "/host/info":
             return {
                 "result": "ok",

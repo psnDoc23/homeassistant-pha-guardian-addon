@@ -1,5 +1,5 @@
 name: "PHA Guardian"
-version: "0.0.178"
+version: "0.0.179"
 slug: "pha_guardian_dev"
 description: "Guardian API monitoring tool"
 # Use this for Supervisor access
@@ -31,6 +31,7 @@ options:
   guardian_ip: "10.0.0.140"
   dev_mode: false
   automation_ids: []
+  website_sharing: false
   api_token: ""
   push_url: "https://prophetdata.net/connect/guardian/push/"
 schema:
@@ -38,6 +39,7 @@ schema:
   dev_mode: bool
   automation_ids:
     - str
+  website_sharing: bool
   api_token: str
   push_url: str
 

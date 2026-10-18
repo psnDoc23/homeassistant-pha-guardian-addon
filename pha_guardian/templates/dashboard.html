@@ -160,6 +160,33 @@
             font-size: 0.9em;
             padding: 8px 0;
         }
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: -12px 0 24px;
+            font-size: 0.85em;
+            color: #777;
+        }
+        .status-bar .save-btn { margin-top: 0; padding: 6px 16px; }
+        .save-btn:disabled { background: #8aa9bf; cursor: wait; }
+        #summary.attention { border-left: 5px solid #f39c12; }
+        #summary.incomplete { border-left: 5px solid #95a5a6; }
+        #summary.error { border-left: 5px solid #e74c3c; }
+        #summary .summary-sub { font-size: 0.8em; color: #666; margin-top: 6px; }
+        .incomplete-note {
+            background: #f2f3f4;
+            border-left: 5px solid #95a5a6;
+            border-radius: 8px;
+            padding: 14px 20px;
+            margin-bottom: 16px;
+            font-size: 0.9em;
+        }
+        .incomplete-note ul { margin: 8px 0 0; padding-left: 20px; color: #666; }
+        .sharing-section p { font-size: 0.9em; color: #555; margin: 4px 0; }
+        .sharing-state { font-weight: bold; }
         .dev-toolbar {
             background: #fff8db;
             border: 1px solid #ead78f;
@@ -200,6 +227,11 @@
     </div>
     {% endif %}
     <div id="summary">Loading...</div>
+    <div class="status-bar">
+        <span id="last-checked"></span>
+        <button class="save-btn" id="check-now" onclick="checkNow()">Check now</button>
+    </div>
+    <div id="incomplete-note"></div>
     <div id="issues-list"></div>
 
     <div class="scanner-section">
@@ -210,9 +242,14 @@
         <div class="save-confirmation" id="save-confirmation">✅ Saved!</div>
     </div>
 
+    <div class="scanner-section sharing-section">
+        <h2>🌐 Website sharing</h2>
+        <p class="sharing-state" id="sharing-state">Checking…</p>
+        <p id="sharing-detail"></p>
+    </div>
+
     <script>
         const BASE_PATH = "{{ ingress_path }}";
-        const API_TOKEN = "{{ api_token }}";
         const dismissed = new Set();
         let candidates = [];
         let monitored = new Set();
@@ -220,9 +257,7 @@
         async function loadScenarios() {
             const select = document.getElementById('scenario-select');
             if (!select) return;
-            const res = await fetch(BASE_PATH + '/dev/scenarios', {
-                headers: { "Authorization": `Bearer ${API_TOKEN}` }
-            });
+            const res = await fetch(BASE_PATH + '/dev/scenarios');
             const data = await res.json();
             select.innerHTML = '';
             data.scenarios.forEach(scenario => {
@@ -244,44 +279,131 @@
         }
 
         async function selectScenario(scenarioId) {
-            await fetch(BASE_PATH + `/dev/scenarios/${scenarioId}`, {
-                method: 'POST',
-                headers: { "Authorization": `Bearer ${API_TOKEN}` }
-            });
+            await fetch(BASE_PATH + `/dev/scenarios/${scenarioId}`, { method: 'POST' });
             updateScenarioDescription();
             await Promise.all([loadIssues(), loadAutomations()]);
         }
 
-        async function loadIssues() {
-            const res = await fetch(BASE_PATH + '/issues', {
-                headers: { "Authorization": `Bearer ${API_TOKEN}` }
-            });
-            const data = await res.json();
-            const issues = data.issues.filter(i => !dismissed.has(i.id));
+        function esc(value) {
+            const div = document.createElement('div');
+            div.textContent = value == null ? '' : String(value);
+            return div.innerHTML;
+        }
 
+        function timeAgo(iso) {
+            const seconds = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000));
+            if (seconds < 60) return 'just now';
+            const minutes = Math.round(seconds / 60);
+            if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+            const hours = Math.round(minutes / 60);
+            if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+            const days = Math.round(hours / 24);
+            return `${days} day${days === 1 ? '' : 's'} ago`;
+        }
+
+        function showSharing(sharing) {
+            const state = document.getElementById('sharing-state');
+            const detail = document.getElementById('sharing-detail');
+            const copy = {
+                off: ['Off',
+                    'Guardian runs every check inside your Home Assistant. Nothing is sent anywhere.'],
+                needs_connection: ['On, but not connected yet',
+                    'Sharing is switched on, but this Guardian is not connected to a website account, so nothing is being sent.'],
+                active: ['On',
+                    'Check results and device types are sent to your Prophet Data account.']
+            };
+            const [title, text] = copy[sharing && sharing.state] || ['Unknown', ''];
+            state.textContent = title;
+            detail.textContent = text;
+        }
+
+        function showLastChecked(report, history) {
+            const el = document.getElementById('last-checked');
+            if (!report) { el.textContent = ''; return; }
+            let text = `Last checked ${timeAgo(report.checked_at)}`;
+            if (!report.all_checks_completed) {
+                text += history.last_complete_at
+                    ? ` · last time every check finished: ${timeAgo(history.last_complete_at)}`
+                    : ' · no check has finished completely yet';
+            }
+            el.textContent = text;
+        }
+
+        function showProblem(message) {
             const summary = document.getElementById('summary');
-            const list = document.getElementById('issues-list');
+            summary.className = 'error';
+            summary.innerHTML = '⚠️ Guardian couldn\'t run its checks' +
+                `<div class="summary-sub">${esc(message)} This is not a sign that your home is healthy.</div>`;
+            document.getElementById('issues-list').innerHTML = '';
+            document.getElementById('incomplete-note').innerHTML = '';
+        }
 
-            summary.textContent = issues.length === 0
-                ? '✅ No issues detected'
-                : `⚠️ ${issues.length} issue${issues.length > 1 ? 's' : ''} detected`;
-
-            list.innerHTML = '';
-
-            if (issues.length === 0) {
-                list.innerHTML = '<div id="no-issues">Your system looks healthy.</div>';
+        async function loadIssues() {
+            let data;
+            try {
+                const res = await fetch(BASE_PATH + '/issues');
+                if (!res.ok) throw new Error(`Guardian returned status ${res.status}.`);
+                data = await res.json();
+                if (!data.report) throw new Error('Guardian sent an unexpected response.');
+            } catch (e) {
+                showProblem(e.message || 'Guardian could not be reached.');
                 return;
             }
 
-            issues.forEach(issue => {
+            const report = data.report;
+            const failedIds = new Set(report.failed_checks.map(f => f.id));
+            const findings = data.issues.filter(i => !failedIds.has(i.id) && !dismissed.has(i.id));
+
+            const summary = document.getElementById('summary');
+            const list = document.getElementById('issues-list');
+            const note = document.getElementById('incomplete-note');
+
+            showLastChecked(report, data.history);
+            showSharing(data.sharing);
+
+            // Say "healthy" only if every check finished and none found anything.
+            const hiddenFindings = report.finding_count - findings.length;
+            if (findings.length > 0) {
+                summary.className = 'attention';
+                summary.textContent = `⚠️ ${findings.length} issue${findings.length > 1 ? 's' : ''} detected`;
+            } else if (!report.all_checks_completed) {
+                summary.className = 'incomplete';
+                summary.innerHTML = '⚠️ Some checks couldn\'t finish' +
+                    '<div class="summary-sub">Guardian didn\'t find a problem, but it couldn\'t complete every check, so it can\'t say your system is healthy.</div>';
+            } else if (hiddenFindings > 0) {
+                summary.className = 'attention';
+                summary.textContent = `✅ No open issues (you dismissed ${hiddenFindings} until reload)`;
+            } else {
+                summary.className = '';
+                summary.textContent = '✅ All checks finished — no issues detected';
+            }
+
+            if (report.failed_checks.length > 0) {
+                note.innerHTML = `<div class="incomplete-note"><strong>${report.failed_checks.length} check${report.failed_checks.length > 1 ? 's' : ''} couldn't finish</strong>` +
+                    '<ul>' + report.failed_checks.map(f =>
+                        `<li>${esc(f.title)}${f.detail ? ' — ' + esc(f.detail) : ''}</li>`).join('') + '</ul></div>';
+            } else {
+                note.innerHTML = '';
+            }
+
+            list.innerHTML = '';
+
+            if (findings.length === 0) {
+                if (report.all_checks_completed && hiddenFindings === 0) {
+                    list.innerHTML = '<div id="no-issues">Your system looks healthy.</div>';
+                }
+                return;
+            }
+
+            findings.forEach(issue => {
                 const div = document.createElement('div');
-                div.className = `issue ${issue.severity}`;
+                div.className = `issue ${esc(issue.severity)}`;
                 div.innerHTML = `
                     <div class="issue-header">
                         <div>
-                            <div class="issue-title">${issue.title}</div>
-                            <div class="issue-detail">${issue.detail || ''}</div>
-                            <div class="issue-severity">${issue.severity}</div>
+                            <div class="issue-title">${esc(issue.title)}</div>
+                            <div class="issue-detail">${esc(issue.detail || '')}</div>
+                            <div class="issue-severity">${esc(issue.severity)}</div>
                         </div>
                         <div class="issue-actions">
                             ${issue.suggestion ? `<button class="fix-btn" onclick="toggleFix('${issue.id}')">How to fix</button>` : ''}
@@ -292,21 +414,29 @@
                     ${issue.suggestion ? `
                     <div class="fix-section" id="fix-${issue.id}">
                         <div class="fix-label">💡 Suggested fix</div>
-                        <div>${issue.suggestion}</div>
+                        <div>${esc(issue.suggestion)}</div>
                     </div>` : ''}
                 `;
                 list.appendChild(div);
-            });                                                 
+            });
+        }
+
+        async function checkNow() {
+            const button = document.getElementById('check-now');
+            button.disabled = true;
+            button.textContent = 'Checking…';
+            try {
+                await loadIssues();
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Check now';
+            }
         }
 
         async function loadAutomations() {
             const [candidatesRes, monitoredRes] = await Promise.all([
-                fetch(BASE_PATH + '/ha/automations/candidates', {
-                    headers: { "Authorization": `Bearer ${API_TOKEN}` }
-                }),
-                fetch(BASE_PATH + '/automations/monitored', {
-                    headers: { "Authorization": `Bearer ${API_TOKEN}` }
-                })
+                fetch(BASE_PATH + '/ha/automations/candidates'),
+                fetch(BASE_PATH + '/automations/monitored')
             ]);
             candidates = await candidatesRes.json();
             const monitoredData = await monitoredRes.json();
@@ -342,10 +472,7 @@
 
             await fetch(BASE_PATH + '/automations/monitored', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    "Authorization": `Bearer ${API_TOKEN}`
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ monitored_automation_ids: selected })
             });
 
@@ -365,8 +492,7 @@
             
             try {
                 const res = await fetch(BASE_PATH + `/ha/automations/${automationId}/enable`, {
-                    method: 'POST',
-                    headers: { "Authorization": `Bearer ${API_TOKEN}` }
+                    method: 'POST'
                 });
                 if (res.ok) {
                     dismissed.add(issueId);

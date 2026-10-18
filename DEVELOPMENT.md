@@ -13,6 +13,7 @@ Available scenarios:
 - Repeated device dropout
 - Correlated dropout
 - Missed automation
+- A check can't finish (nothing found, but the result must not read as healthy)
 
 Changes to Python, HTML, CSS, and JavaScript reload automatically. This loop is
 used for interface work, issue presentation, interactions, responsive behavior,
@@ -50,3 +51,13 @@ local/development add-on installation in Home Assistant. The expected cycle is:
 The exact pull/rebuild commands depend on how the development Home Assistant
 instance is hosted. Keep public version bumps for release candidates rather
 than every Replit preview change.
+## Local-first behavior (0.0.179+)
+
+- The app screen works with no website account and no token. Requests that arrive
+  through Home Assistant's Ingress (from `172.30.32.2`) are trusted; every other
+  caller needs the `api_token` as a Bearer token.
+- Nothing is sent to the website unless the `website_sharing` option is on **and**
+  an `api_token` is set. A token alone does not start sharing.
+- A check that cannot finish is reported as incomplete, never as healthy.
+  `check_report.py` decides this; the screen and the website push both use it.
+- `/issues` keeps its original `issues` list and adds `report`, `history`, and `sharing`.
