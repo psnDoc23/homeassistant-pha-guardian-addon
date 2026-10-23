@@ -1,6 +1,7 @@
 # server.py
 import hmac
 import os
+from urllib.parse import urlsplit
 from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI, Request, Body, HTTPException
@@ -90,6 +91,10 @@ PROPHETDATA_PUSH_URL = os.environ.get(
     "https://prophetdata.net/connect/guardian/push/"
 )
 
+
+# Public page on the website explaining what connecting adds (same site as the push URL).
+_push_origin = urlsplit(PROPHETDATA_PUSH_URL)
+WEBSITE_INFO_URL = f"{_push_origin.scheme}://{_push_origin.netloc}/connect/guardian/app/"
 
 
 async def push_to_prophetdata(issues: list, device_registry: dict = None, ha_timezone: str = None) -> bool:
@@ -428,7 +433,7 @@ async def issues():
         "issues": all_issues,
         "report": report,
         "history": check_history.snapshot(),
-        "sharing": {"state": sharing_state()},
+        "sharing": {"state": sharing_state(), "info_url": WEBSITE_INFO_URL},
     }
 
 

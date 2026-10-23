@@ -246,6 +246,7 @@
         <h2>🌐 Website sharing</h2>
         <p class="sharing-state" id="sharing-state">Checking…</p>
         <p id="sharing-detail"></p>
+        <p id="sharing-invite"></p>
     </div>
 
     <script>
@@ -315,6 +316,19 @@
             const [title, text] = copy[sharing && sharing.state] || ['Unknown', ''];
             state.textContent = title;
             detail.textContent = text;
+
+            // Invitation: explain the benefit and link to the website. Nothing is sent by following it.
+            const invite = document.getElementById('sharing-invite');
+            invite.textContent = '';
+            if (sharing && sharing.info_url && sharing.state !== 'active') {
+                invite.append('Connecting to the website lets you see your issues and history from anywhere, not only inside Home Assistant. ');
+                const link = document.createElement('a');
+                link.href = sharing.info_url;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                link.textContent = 'Learn more and create a free account';
+                invite.append(link);
+            }
         }
 
         function showLastChecked(report, history) {

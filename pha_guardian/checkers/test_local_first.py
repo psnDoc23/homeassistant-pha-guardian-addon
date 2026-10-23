@@ -82,7 +82,8 @@ def test_ingress_requests_work_with_no_token_configured(production):
     assert response.status_code == 200
     body = response.json()
     assert body["report"]["status"] == STATUS_OK
-    assert body["sharing"] == {"state": "off"}
+    assert body["sharing"]["state"] == "off"
+    assert body["sharing"]["info_url"].endswith("/connect/guardian/app/")
 
 
 def test_other_callers_are_rejected_when_no_token_is_configured(production):
