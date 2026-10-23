@@ -74,3 +74,10 @@ than every Replit preview change.
 - To test against the local website: run a second app instance with
   `PROPHETDATA_PUSH_URL=http://127.0.0.1:5000/connect/guardian/push/` and a temporary
   `GUARDIAN_DATA_DIR`.
+
+## First report confirmation (0.0.182+)
+
+- Every send records its outcome (`sent`, `rejected` for a 401, `failed`, `unreachable`),
+  shown on the Website sharing card. It resets whenever the link changes.
+- Linking wakes the background poller so the first report goes out right away.
+- On the website, the link page counts only reports received since the link was made.

@@ -73,6 +73,21 @@ def sharing_state() -> str:
     return "active" if API_TOKEN else "needs_connection"
 
 
+# What happened the last time we tried to send a report. Kept in memory; reset whenever the
+# link changes so the screen never shows an old result for a new connection.
+share_outcome: dict = {"state": "none", "at": None}
+
+
+def record_share_outcome(state: str) -> None:
+    share_outcome["state"] = state
+    share_outcome["at"] = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def reset_share_outcome() -> None:
+    share_outcome["state"] = "none"
+    share_outcome["at"] = None
+
+
 def sharing_payload() -> dict:
     linked = linked_connection()
     return {
@@ -82,6 +97,7 @@ def sharing_payload() -> dict:
         "linked_at": (linked or {}).get("linked_at"),
         "info_url": WEBSITE_INFO_URL,
         "link_url": WEBSITE_LINK_URL,
+        "last_report": dict(share_outcome),
     }
 
 
@@ -149,9 +165,16 @@ async def push_to_prophetdata(issues: list, device_registry: dict = None, ha_tim
                 headers={"Authorization": f"Bearer {outbound_token()}"}
             )
             logger.info(f"Push to prophetdata.net: status={response.status_code} body={response.text[:200]}")
+            if response.is_success:
+                record_share_outcome("sent")
+            elif response.status_code == 401:
+                record_share_outcome("rejected")
+            else:
+                record_share_outcome("failed")
             return response.is_success
     except Exception as e:
         logger.error(f"Push to prophetdata.net failed: {type(e).__name__}: {repr(e)}")
+        record_share_outcome("unreachable")
         return False
 
 
@@ -238,11 +261,19 @@ async def share_with_website(all_issues: list) -> bool:
     return await push_to_prophetdata(all_issues, device_registry, ha_timezone=ha_timezone)
 
 
+# Set when the user links the app so the first report goes out right away.
+check_soon = asyncio.Event()
+
+
 async def background_polling():
     # First check shortly after start so the screen has a "last checked" time.
     delay = 5
     while True:
-        await asyncio.sleep(delay)
+        try:
+            await asyncio.wait_for(check_soon.wait(), timeout=delay)
+        except asyncio.TimeoutError:
+            pass
+        check_soon.clear()
         delay = 120
         try:
             all_issues, report = await perform_check()
@@ -516,6 +547,8 @@ async def website_connect(payload: dict = Body(...)):
         )
 
     connection_store.save(token, account=data.get("account", ""))
+    reset_share_outcome()
+    check_soon.set()
     logger.info("Linked to a website account")
     return {"status": "ok", "sharing": sharing_payload()}
 
@@ -537,6 +570,7 @@ async def website_disconnect():
             logger.warning(f"Could not tell the website about the disconnect: {type(e).__name__}")
     # Local disconnect always happens, even if the website could not be reached.
     connection_store.clear()
+    reset_share_outcome()
     logger.info(f"Disconnected from the website (website notified: {revoked_on_website})")
     return {
         "status": "ok",

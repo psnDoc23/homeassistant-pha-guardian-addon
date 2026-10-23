@@ -194,6 +194,7 @@
         }
         .pair-row .save-btn { margin-top: 0; }
         .pair-help { font-size: 0.8em !important; color: #777 !important; }
+        #sharing-report.problem { color: #c0392b; font-weight: bold; }
         #sharing-message { min-height: 1.2em; }
         #sharing-message.error { color: #c0392b; }
         #sharing-message.ok { color: #27ae60; }
@@ -256,6 +257,7 @@
         <h2>🌐 Website sharing</h2>
         <p class="sharing-state" id="sharing-state">Checking…</p>
         <p id="sharing-detail"></p>
+        <p id="sharing-report"></p>
         <p id="sharing-invite"></p>
         <div id="sharing-connect" style="display:none;">
             <label for="pair-code" style="font-size:0.9em;">Code from the website</label>
@@ -331,7 +333,42 @@
             el.className = kind || '';
         }
 
+        function showReportStatus(s) {
+            const el = document.getElementById('sharing-report');
+            el.className = '';
+            el.textContent = '';
+            if (s.state !== 'active') return;
+            const last = s.last_report || {};
+            if (last.state === 'sent') {
+                el.textContent = `Last report received by the website: ${timeAgo(last.at)}.`;
+            } else if (last.state === 'rejected') {
+                el.className = 'problem';
+                el.textContent = 'The website no longer accepts this connection, so nothing is arriving. Press Disconnect, then connect again with a new code.';
+            } else if (last.state === 'unreachable') {
+                el.className = 'problem';
+                el.textContent = `Couldn't reach the website (${timeAgo(last.at)}). Guardian will keep trying every couple of minutes.`;
+            } else if (last.state === 'failed') {
+                el.className = 'problem';
+                el.textContent = `The website had a problem with the last report (${timeAgo(last.at)}). Guardian will keep trying.`;
+            } else {
+                el.textContent = 'Waiting to send the first report. This usually takes under two minutes.';
+            }
+        }
+
+        let lastSharing = null;
+
+        // After linking, look again every few seconds until the first report goes out.
+        function watchForFirstReport(triesLeft) {
+            setTimeout(async () => {
+                await loadIssues();
+                const waiting = lastSharing && lastSharing.linked &&
+                    (lastSharing.last_report || {}).state === 'none';
+                if (waiting && triesLeft > 1) watchForFirstReport(triesLeft - 1);
+            }, 8000);
+        }
+
         function showSharing(sharing) {
+            lastSharing = sharing || {};
             const state = document.getElementById('sharing-state');
             const detail = document.getElementById('sharing-detail');
             const invite = document.getElementById('sharing-invite');
@@ -340,6 +377,7 @@
             const s = sharing || {};
 
             invite.textContent = '';
+            showReportStatus(s);
             connectBox.style.display = 'none';
             disconnectBox.style.display = 'none';
 
@@ -398,7 +436,8 @@
                 }
                 input.value = '';
                 showSharing(data.sharing);
-                setSharingMessage('Connected. Guardian will send its first report within a couple of minutes.', 'ok');
+                setSharingMessage('Connected. Sending the first report now.', 'ok');
+                watchForFirstReport(10);
             } catch (e) {
                 setSharingMessage('Couldn\'t reach Guardian. Reload this page and try again.', 'error');
             } finally {

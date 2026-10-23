@@ -167,3 +167,43 @@ def test_store_round_trip_and_unreadable_file_counts_as_unlinked(tmp_path):
     assert store.load() is None
     with pytest.raises(ValueError):
         store.save("")
+
+
+def test_report_outcome_is_recorded_for_each_kind_of_result(app_state, monkeypatch):
+    app_state.save("t" * 64)
+    import asyncio
+
+    def run(handler):
+        fake_website(monkeypatch, handler)
+        asyncio.run(server.push_to_prophetdata([]))
+        return server.sharing_payload()["last_report"]["state"]
+
+    assert server.sharing_payload()["last_report"]["state"] == "none"
+    assert run(lambda r: httpx.Response(200, json={"status": "ok"})) == "sent"
+    assert run(lambda r: httpx.Response(401, json={"error": "Unauthorized"})) == "rejected"
+    assert run(lambda r: httpx.Response(500)) == "failed"
+
+    def down(request):
+        raise httpx.ConnectError("no route")
+
+    assert run(down) == "unreachable"
+    assert server.sharing_payload()["last_report"]["at"]
+
+
+def test_outcome_resets_when_linking_changes_and_linking_wakes_the_poller(app_state, monkeypatch):
+    server.record_share_outcome("rejected")
+    server.check_soon.clear()
+    fake_website(monkeypatch, accepting)
+    response = ingress().post("/website/connect", json={"code": "ABCD-EFGH"})
+    assert response.json()["sharing"]["last_report"]["state"] == "none"
+    assert server.check_soon.is_set()
+    server.record_share_outcome("sent")
+    body = ingress().post("/website/disconnect").json()
+    assert body["sharing"]["last_report"]["state"] == "none"
+
+
+def test_nothing_is_recorded_when_sharing_is_off(app_state):
+    import asyncio
+
+    assert asyncio.run(server.push_to_prophetdata([])) is False
+    assert server.sharing_payload()["last_report"]["state"] == "none"
