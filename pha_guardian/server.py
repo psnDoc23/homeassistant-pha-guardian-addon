@@ -27,6 +27,7 @@ import asyncio
 from checkers.device_dropouts import check_device_dropouts
 from checkers.device_classifier import classify_devices
 from check_report import CheckHistory, build_report
+from connection import ConnectionStore
 
 
 
@@ -41,18 +42,47 @@ logger = setup_logging()
 API_TOKEN = os.environ.get("API_TOKEN", "")
 INGRESS_PROXY_IP = "172.30.32.2"  # the only address Supervisor proxies Ingress from
 
-# Website sharing is off unless the user turns it on AND a token is configured.
+# Website sharing is off unless the user links this app to a website account with a
+# pairing code. (Older installs can still use the website_sharing option plus api_token.)
 WEBSITE_SHARING_ENABLED = os.environ.get("WEBSITE_SHARING", "false").lower() == "true"
+
+connection_store = ConnectionStore()
+
+
+def linked_connection() -> dict | None:
+    return connection_store.load()
+
+
+def outbound_token() -> str:
+    """The credential used when talking to the website."""
+    linked = linked_connection()
+    if linked:
+        return linked["token"]
+    return API_TOKEN if WEBSITE_SHARING_ENABLED else ""
 
 
 def sharing_active() -> bool:
-    return WEBSITE_SHARING_ENABLED and bool(API_TOKEN)
+    return bool(outbound_token())
 
 
 def sharing_state() -> str:
+    if linked_connection():
+        return "active"
     if not WEBSITE_SHARING_ENABLED:
         return "off"
     return "active" if API_TOKEN else "needs_connection"
+
+
+def sharing_payload() -> dict:
+    linked = linked_connection()
+    return {
+        "state": sharing_state(),
+        "linked": bool(linked),
+        "account": (linked or {}).get("account", ""),
+        "linked_at": (linked or {}).get("linked_at"),
+        "info_url": WEBSITE_INFO_URL,
+        "link_url": WEBSITE_LINK_URL,
+    }
 
 
 def is_ingress_request(request: Request) -> bool:
@@ -60,12 +90,12 @@ def is_ingress_request(request: Request) -> bool:
 
 
 def has_valid_token(request: Request) -> bool:
-    if not API_TOKEN:
-        return False
     auth = request.headers.get("Authorization", "")
-    return auth.startswith("Bearer ") and hmac.compare_digest(
-        auth[len("Bearer "):], API_TOKEN
-    )
+    if not auth.startswith("Bearer "):
+        return False
+    presented = auth[len("Bearer "):]
+    accepted = [t for t in (API_TOKEN, (linked_connection() or {}).get("token")) if t]
+    return any(hmac.compare_digest(presented, token) for token in accepted)
 
 
 async def verify_token(request: Request, call_next):
@@ -94,7 +124,11 @@ PROPHETDATA_PUSH_URL = os.environ.get(
 
 # Public page on the website explaining what connecting adds (same site as the push URL).
 _push_origin = urlsplit(PROPHETDATA_PUSH_URL)
-WEBSITE_INFO_URL = f"{_push_origin.scheme}://{_push_origin.netloc}/connect/guardian/app/"
+_website_base = f"{_push_origin.scheme}://{_push_origin.netloc}"
+WEBSITE_INFO_URL = f"{_website_base}/connect/guardian/app/"
+WEBSITE_LINK_URL = f"{_website_base}/connect/guardian/link/"
+WEBSITE_PAIR_URL = f"{_website_base}/connect/guardian/pair/"
+WEBSITE_UNPAIR_URL = f"{_website_base}/connect/guardian/unpair/"
 
 
 async def push_to_prophetdata(issues: list, device_registry: dict = None, ha_timezone: str = None) -> bool:
@@ -112,7 +146,7 @@ async def push_to_prophetdata(issues: list, device_registry: dict = None, ha_tim
             response = await client.post(
                 PROPHETDATA_PUSH_URL,
                 json=payload,
-                headers={"Authorization": f"Bearer {API_TOKEN}"}
+                headers={"Authorization": f"Bearer {outbound_token()}"}
             )
             logger.info(f"Push to prophetdata.net: status={response.status_code} body={response.text[:200]}")
             return response.is_success
@@ -433,9 +467,82 @@ async def issues():
         "issues": all_issues,
         "report": report,
         "history": check_history.snapshot(),
-        "sharing": {"state": sharing_state(), "info_url": WEBSITE_INFO_URL},
+        "sharing": sharing_payload(),
     }
 
+
+
+# ---------------------------
+# Website link (pairing code)
+# ---------------------------
+@app.post("/website/connect")
+async def website_connect(payload: dict = Body(...)):
+    """Trade the code from the website for this app's own credential."""
+    code = str(payload.get("code", "")).strip()
+    if not code:
+        return JSONResponse(status_code=400, content={"error": "Enter the code from the website."})
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(WEBSITE_PAIR_URL, json={"code": code})
+    except httpx.HTTPError as e:
+        logger.error(f"Website pairing request failed: {type(e).__name__}")
+        return JSONResponse(
+            status_code=502,
+            content={"error": "Couldn't reach the website. Check your internet connection and try again."},
+        )
+
+    if response.status_code in (400, 429):
+        try:
+            message = response.json().get("error")
+        except ValueError:
+            message = None
+        return JSONResponse(
+            status_code=response.status_code,
+            content={"error": message or "The website did not accept that code."},
+        )
+    if not response.is_success:
+        return JSONResponse(
+            status_code=502,
+            content={"error": "The website had a problem. Try again in a few minutes."},
+        )
+
+    try:
+        data = response.json()
+        token = data["token"]
+    except (ValueError, KeyError, TypeError):
+        return JSONResponse(
+            status_code=502,
+            content={"error": "The website sent an unexpected answer. Try again in a few minutes."},
+        )
+
+    connection_store.save(token, account=data.get("account", ""))
+    logger.info("Linked to a website account")
+    return {"status": "ok", "sharing": sharing_payload()}
+
+
+@app.post("/website/disconnect")
+async def website_disconnect():
+    """Stop sharing now. Also tells the website to cancel this app's credential."""
+    linked = linked_connection()
+    revoked_on_website = False
+    if linked:
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.post(
+                    WEBSITE_UNPAIR_URL,
+                    headers={"Authorization": f"Bearer {linked['token']}"},
+                )
+            revoked_on_website = response.is_success
+        except httpx.HTTPError as e:
+            logger.warning(f"Could not tell the website about the disconnect: {type(e).__name__}")
+    # Local disconnect always happens, even if the website could not be reached.
+    connection_store.clear()
+    logger.info(f"Disconnected from the website (website notified: {revoked_on_website})")
+    return {
+        "status": "ok",
+        "revoked_on_website": revoked_on_website,
+        "sharing": sharing_payload(),
+    }
 
 
 # ---------------------------

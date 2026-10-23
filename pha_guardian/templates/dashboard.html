@@ -187,6 +187,16 @@
         .incomplete-note ul { margin: 8px 0 0; padding-left: 20px; color: #666; }
         .sharing-section p { font-size: 0.9em; color: #555; margin: 4px 0; }
         .sharing-state { font-weight: bold; }
+        .pair-row { display: flex; gap: 10px; align-items: center; margin-top: 6px; }
+        .pair-row input {
+            padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px;
+            font-family: monospace; font-size: 1.05em; letter-spacing: 0.08em; text-transform: uppercase; width: 12em;
+        }
+        .pair-row .save-btn { margin-top: 0; }
+        .pair-help { font-size: 0.8em !important; color: #777 !important; }
+        #sharing-message { min-height: 1.2em; }
+        #sharing-message.error { color: #c0392b; }
+        #sharing-message.ok { color: #27ae60; }
         .dev-toolbar {
             background: #fff8db;
             border: 1px solid #ead78f;
@@ -247,6 +257,19 @@
         <p class="sharing-state" id="sharing-state">Checking…</p>
         <p id="sharing-detail"></p>
         <p id="sharing-invite"></p>
+        <div id="sharing-connect" style="display:none;">
+            <label for="pair-code" style="font-size:0.9em;">Code from the website</label>
+            <div class="pair-row">
+                <input type="text" id="pair-code" maxlength="12" autocomplete="off" spellcheck="false"
+                       placeholder="ABCD-EFGH" onkeydown="if (event.key === 'Enter') connectWebsite()">
+                <button class="save-btn" id="pair-button" onclick="connectWebsite()">Connect</button>
+            </div>
+            <p class="pair-help">Don't have a code? <a id="get-code-link" href="#" target="_blank" rel="noopener noreferrer">Get one on the website</a> (sign in, press "Get a code").</p>
+        </div>
+        <div id="sharing-disconnect" style="display:none;">
+            <button class="dismiss-btn" id="disconnect-button" onclick="disconnectWebsite()">Disconnect</button>
+        </div>
+        <p id="sharing-message" role="status"></p>
     </div>
 
     <script>
@@ -302,32 +325,111 @@
             return `${days} day${days === 1 ? '' : 's'} ago`;
         }
 
+        function setSharingMessage(text, kind) {
+            const el = document.getElementById('sharing-message');
+            el.textContent = text || '';
+            el.className = kind || '';
+        }
+
         function showSharing(sharing) {
             const state = document.getElementById('sharing-state');
             const detail = document.getElementById('sharing-detail');
+            const invite = document.getElementById('sharing-invite');
+            const connectBox = document.getElementById('sharing-connect');
+            const disconnectBox = document.getElementById('sharing-disconnect');
+            const s = sharing || {};
+
+            invite.textContent = '';
+            connectBox.style.display = 'none';
+            disconnectBox.style.display = 'none';
+
+            if (s.linked) {
+                state.textContent = s.account ? `Connected as ${s.account}` : 'Connected';
+                detail.textContent = 'Check results and a list of your devices with their types are sent to your Prophet Data account. Disconnect to stop sharing right away.';
+                disconnectBox.style.display = 'block';
+                return;
+            }
+
             const copy = {
                 off: ['Off',
                     'Guardian runs every check inside your Home Assistant. Nothing is sent anywhere.'],
                 needs_connection: ['On, but not connected yet',
-                    'Sharing is switched on, but this Guardian is not connected to a website account, so nothing is being sent.'],
+                    'Sharing is switched on in the app settings, but no website account is linked, so nothing is being sent.'],
                 active: ['On',
                     'Check results and device types are sent to your Prophet Data account.']
             };
-            const [title, text] = copy[sharing && sharing.state] || ['Unknown', ''];
+            const [title, text] = copy[s.state] || ['Unknown', ''];
             state.textContent = title;
             detail.textContent = text;
 
-            // Invitation: explain the benefit and link to the website. Nothing is sent by following it.
-            const invite = document.getElementById('sharing-invite');
-            invite.textContent = '';
-            if (sharing && sharing.info_url && sharing.state !== 'active') {
+            if (s.state !== 'active') {
                 invite.append('Connecting to the website lets you see your issues and history from anywhere, not only inside Home Assistant. ');
-                const link = document.createElement('a');
-                link.href = sharing.info_url;
-                link.target = '_blank';
-                link.rel = 'noopener noreferrer';
-                link.textContent = 'Learn more and create a free account';
-                invite.append(link);
+                if (s.info_url) {
+                    const link = document.createElement('a');
+                    link.href = s.info_url;
+                    link.target = '_blank';
+                    link.rel = 'noopener noreferrer';
+                    link.textContent = 'Learn more';
+                    invite.append(link);
+                }
+                connectBox.style.display = 'block';
+                if (s.link_url) document.getElementById('get-code-link').href = s.link_url;
+            }
+        }
+
+        async function connectWebsite() {
+            const input = document.getElementById('pair-code');
+            const button = document.getElementById('pair-button');
+            const code = input.value.trim();
+            if (!code) { setSharingMessage('Type the code shown on the website.', 'error'); return; }
+            button.disabled = true;
+            button.textContent = 'Connecting…';
+            setSharingMessage('');
+            try {
+                const res = await fetch(BASE_PATH + '/website/connect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    setSharingMessage(data.error || `Something went wrong (status ${res.status}).`, 'error');
+                    return;
+                }
+                input.value = '';
+                showSharing(data.sharing);
+                setSharingMessage('Connected. Guardian will send its first report within a couple of minutes.', 'ok');
+            } catch (e) {
+                setSharingMessage('Couldn\'t reach Guardian. Reload this page and try again.', 'error');
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Connect';
+            }
+        }
+
+        async function disconnectWebsite() {
+            if (!confirm('Disconnect from the website? Guardian will stop sending anything.')) return;
+            const button = document.getElementById('disconnect-button');
+            button.disabled = true;
+            setSharingMessage('');
+            try {
+                const res = await fetch(BASE_PATH + '/website/disconnect', { method: 'POST' });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    setSharingMessage(data.error || `Something went wrong (status ${res.status}).`, 'error');
+                    return;
+                }
+                showSharing(data.sharing);
+                setSharingMessage(
+                    data.revoked_on_website
+                        ? 'Disconnected. Nothing is being sent.'
+                        : 'Disconnected here and nothing is being sent. The website could not be reached, so also press Disconnect on the website\'s connection page.',
+                    data.revoked_on_website ? 'ok' : 'error'
+                );
+            } catch (e) {
+                setSharingMessage('Couldn\'t reach Guardian. Reload this page and try again.', 'error');
+            } finally {
+                button.disabled = false;
             }
         }
 

@@ -61,3 +61,16 @@ than every Replit preview change.
 - A check that cannot finish is reported as incomplete, never as healthy.
   `check_report.py` decides this; the screen and the website push both use it.
 - `/issues` keeps its original `issues` list and adds `report`, `history`, and `sharing`.
+
+## Linking to the website (0.0.181+)
+
+- The app screen's Website sharing card takes a short code from the website
+  (`/connect/guardian/link/`, signed in) and trades it at `/connect/guardian/pair/`
+  for the app's own credential. The credential is kept in the app's `/data` folder
+  (`website_connection.json`), not in the Home Assistant options.
+- Disconnecting clears the local credential first (always), then tells the website
+  (`/connect/guardian/unpair/`) so the old credential stops working.
+- The old `website_sharing` + `api_token` options still work for existing installs.
+- To test against the local website: run a second app instance with
+  `PROPHETDATA_PUSH_URL=http://127.0.0.1:5000/connect/guardian/push/` and a temporary
+  `GUARDIAN_DATA_DIR`.

@@ -13,6 +13,7 @@ from check_report import (
     CheckHistory,
     build_report,
 )
+from connection import ConnectionStore
 from dev_scenarios import ScenarioSupervisor
 
 
@@ -65,7 +66,8 @@ def test_last_complete_check_only_advances_when_everything_finished():
 # --- access: screen works from Home Assistant, strangers need the token -----
 
 @pytest.fixture
-def production(monkeypatch):
+def production(monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "connection_store", ConnectionStore(tmp_path))
     monkeypatch.setattr(server, "DEV_MODE", False)
     monkeypatch.setattr(server, "API_TOKEN", "")
     monkeypatch.setattr(server, "WEBSITE_SHARING_ENABLED", False)
