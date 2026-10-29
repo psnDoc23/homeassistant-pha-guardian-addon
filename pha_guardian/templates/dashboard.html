@@ -253,7 +253,7 @@
         <div class="save-confirmation" id="save-confirmation">✅ Saved!</div>
     </div>
 
-    <div class="scanner-section sharing-section">
+    <div class="scanner-section sharing-section" id="sharing-card">
         <h2>🌐 Website sharing</h2>
         <p class="sharing-state" id="sharing-state">Checking…</p>
         <p id="sharing-detail"></p>
@@ -563,6 +563,7 @@
                         <div class="issue-actions">
                             ${issue.suggestion ? `<button class="fix-btn" onclick="toggleFix('${issue.id}')">How to fix</button>` : ''}
                             ${issue.fixable ? `<button class="fix-btn" onclick="applyFix('${issue.automation_id}', '${issue.id}')">Apply Fix</button>` : ''}
+                            ${aboutDevices(issue) ? `<button class="fix-btn" onclick="openOnWebsite('${issue.id}')">Open on the website</button>` : ''}
                             <button class="dismiss-btn" onclick="dismiss('${issue.id}')">Dismiss</button>
                         </div>
                     </div>
@@ -658,6 +659,29 @@
             } catch (e) {
                 alert('Fix failed. Please try manually.');
             }
+        }
+
+        // Findings about specific devices can become a story on the website; others cannot.
+        function aboutDevices(issue) {
+            const id = issue.id || '';
+            if (id === 'dropout_check_failed') return false;
+            return ['dropout_', 'correlated_dropout_', 'missed_automation_'].some(prefix => id.startsWith(prefix));
+        }
+
+        function openOnWebsite(issueId) {
+            const s = lastSharing || {};
+            const card = document.getElementById('sharing-card');
+            if (!s.linked) {
+                setSharingMessage('Connect to the website first, then you can open this finding there.', 'error');
+                if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+            if ((s.last_report || {}).state !== 'sent') {
+                setSharingMessage('The website hasn\'t received a report yet. Try again in a minute or two.', 'error');
+                if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+            window.open(`${s.finding_url}?id=${encodeURIComponent(issueId)}`, '_blank', 'noopener,noreferrer');
         }
 
         function dismiss(id) {

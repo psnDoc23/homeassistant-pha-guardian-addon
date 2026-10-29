@@ -81,3 +81,13 @@ than every Replit preview change.
   shown on the Website sharing card. It resets whenever the link changes.
 - Linking wakes the background poller so the first report goes out right away.
 - On the website, the link page counts only reports received since the link was made.
+
+## Opening a finding on the website (0.0.183+)
+
+- Findings about specific devices get an "Open on the website" button. It opens
+  `/connect/guardian/finding/?id=<finding id>` on the website in a new tab. Only the
+  finding's ID is in the address; the website reads the details from the report the app
+  already sent.
+- The website page shows the finding. A Watch Space story is created only when the user
+  presses the button there, and the same finding always reopens the same story.
+- The button explains what is missing when the app is not linked or no report has arrived.

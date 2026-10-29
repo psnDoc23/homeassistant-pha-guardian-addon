@@ -207,3 +207,19 @@ def test_nothing_is_recorded_when_sharing_is_off(app_state):
 
     assert asyncio.run(server.push_to_prophetdata([])) is False
     assert server.sharing_payload()["last_report"]["state"] == "none"
+
+
+def test_sharing_info_gives_the_app_the_website_finding_address(app_state):
+    sharing = server.sharing_payload()
+    assert sharing["finding_url"].endswith("/connect/guardian/finding/")
+
+
+def test_dashboard_offers_open_on_website_only_for_device_findings():
+    html = (server.BASE_DIR / "templates" / "dashboard.html").read_text() if hasattr(server, "BASE_DIR") else None
+    if html is None:
+        from pathlib import Path
+
+        html = (Path(server.__file__).parent / "templates" / "dashboard.html").read_text()
+    assert "Open on the website" in html
+    assert "id === 'dropout_check_failed'" in html
+    assert "encodeURIComponent(issueId)" in html

@@ -97,6 +97,7 @@ def sharing_payload() -> dict:
         "linked_at": (linked or {}).get("linked_at"),
         "info_url": WEBSITE_INFO_URL,
         "link_url": WEBSITE_LINK_URL,
+        "finding_url": WEBSITE_FINDING_URL,
         "last_report": dict(share_outcome),
     }
 
@@ -143,6 +144,7 @@ _push_origin = urlsplit(PROPHETDATA_PUSH_URL)
 _website_base = f"{_push_origin.scheme}://{_push_origin.netloc}"
 WEBSITE_INFO_URL = f"{_website_base}/connect/guardian/app/"
 WEBSITE_LINK_URL = f"{_website_base}/connect/guardian/link/"
+WEBSITE_FINDING_URL = f"{_website_base}/connect/guardian/finding/"
 WEBSITE_PAIR_URL = f"{_website_base}/connect/guardian/pair/"
 WEBSITE_UNPAIR_URL = f"{_website_base}/connect/guardian/unpair/"
 
